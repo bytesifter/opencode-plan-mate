@@ -7,6 +7,7 @@ function makeEntries(count: number, baseURL = "https://x.example/api"): Provider
     key: `k${i + 1}`,
     baseURL,
     account: `account${i + 1}`,
+    models: [],
   }))
 }
 
@@ -92,8 +93,8 @@ test("accountName 返回 key 对应的账号名", () => {
 
 test("findBaseURL 返回匹配的 baseURL", () => {
   const entries: ProviderEntry[] = [
-    { key: "k1", baseURL: "https://host/coding/v3", account: "a1" },
-    { key: "k2", baseURL: "https://host/plan/v3", account: "a2" },
+    { key: "k1", baseURL: "https://host/coding/v3", account: "a1", models: [] },
+    { key: "k2", baseURL: "https://host/plan/v3", account: "a2", models: [] },
   ]
   const pool = new ProviderPool(entries, 60000)
   expect(pool.findBaseURL("https://host/coding/v3/chat/completions")).toBe("https://host/coding/v3")
@@ -107,4 +108,54 @@ test("markCooldown(key, ms) 自定义时长覆盖默认 cooldownMs", async () =>
   expect(pool.isCoolingDown("k1")).toBe(true)
   await new Promise((r) => setTimeout(r, 70))
   expect(pool.isCoolingDown("k1")).toBe(false)
+})
+
+test("按模型分组选择:同模型跨 baseURL", () => {
+  const entries: ProviderEntry[] = [
+    { key: "k1", baseURL: "https://ark.example/coding/v3", account: "ark1", models: ["glm-5.2", "deepseek-v4-flash"] },
+    { key: "k2", baseURL: "https://ark.example/coding/v3", account: "ark2", models: ["glm-5.2", "deepseek-v4-flash"] },
+    { key: "k3", baseURL: "https://api.deepseek.com", account: "deepseek", models: ["deepseek-v4-flash"] },
+  ]
+  const pool = new ProviderPool(entries, 60000)
+  expect(pool.hasGroup("glm-5.2")).toBe(true)
+  expect(pool.hasGroup("deepseek-v4-flash")).toBe(true)
+  expect(pool.hasGroup("unknown-model")).toBe(false)
+
+  const glmKeys = new Set<string>()
+  for (let i = 0; i < 100; i++) {
+    glmKeys.add(pool.next("glm-5.2")!.key)
+  }
+  expect(glmKeys).toEqual(new Set(["k1", "k2"]))
+
+  const dsKeys = new Set<string>()
+  for (let i = 0; i < 100; i++) {
+    dsKeys.add(pool.next("deepseek-v4-flash")!.key)
+  }
+  expect(dsKeys).toEqual(new Set(["k1", "k2", "k3"]))
+})
+
+test("model 无分组时退化到扁平池", () => {
+  const entries: ProviderEntry[] = [
+    { key: "k1", baseURL: "https://ark.example/coding/v3", account: "ark1", models: ["glm-5.2"] },
+    { key: "k2", baseURL: "https://api.deepseek.com", account: "deepseek", models: ["deepseek-v4-flash"] },
+  ]
+  const pool = new ProviderPool(entries, 60000)
+  const keys = new Set<string>()
+  for (let i = 0; i < 100; i++) {
+    keys.add(pool.next("unknown-model")!.key)
+  }
+  expect(keys).toEqual(new Set(["k1", "k2"]))
+})
+
+test("无 model 参数时退化到扁平池", () => {
+  const entries: ProviderEntry[] = [
+    { key: "k1", baseURL: "https://ark.example/coding/v3", account: "ark1", models: ["glm-5.2"] },
+    { key: "k2", baseURL: "https://api.deepseek.com", account: "deepseek", models: ["deepseek-v4-flash"] },
+  ]
+  const pool = new ProviderPool(entries, 60000)
+  const keys = new Set<string>()
+  for (let i = 0; i < 100; i++) {
+    keys.add(pool.next()!.key)
+  }
+  expect(keys).toEqual(new Set(["k1", "k2"]))
 })

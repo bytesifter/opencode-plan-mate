@@ -1,3 +1,5 @@
+## MODIFIED Requirements
+
 ### Requirement: 按天累计请求数与 token
 
 插件 SHALL 通过 `event` hook 监听 `message.updated` 事件，按天、按 provider 累计请求数与 token 消耗。统计 SHALL 在内存对象上累积，定时器每 60 秒整体刷盘一次；进程退出时 SHALL 兜底刷盘。
@@ -42,40 +44,6 @@ token 归因到实际服务的 provider（而非 opencode 配置的 provider）�
 - **WHEN** 进程收到 `beforeExit` / `SIGINT` / `SIGTERM`
 - **THEN** 插件 SHALL 最后刷盘一次，避免丢失最近统计
 
-### Requirement: 零 token 事件跳过
-
-插件 SHALL 跳过所有 token 值（input、output、reasoning、cacheRead、cacheWrite）均为零的 `message.updated` 事件。这些事件来自 opencode 创建 assistant 消息时的初始 `updateMessage` 调用，非真实 LLM 用量报告，SHALL NOT 累加到统计中。
-
-#### Scenario: 全零 token 事件跳过
-
-- **WHEN** `message.updated` 事件的 `info.tokens` 所有字段（input、output、reasoning、cache.read、cache.write）均为 0
-- **THEN** 插件 SHALL 跳过该事件，不累加 req，不累加 token
-- **AND** SHALL NOT 更新 lastTokens 快照
-
-#### Scenario: 全零后跟真实 token 正常累加
-
-- **WHEN** 同一 `info.id` 先到达全零 token 事件（被跳过），再到达非零 token 事件
-- **THEN** 插件 SHALL 正常累加非零事件（lastTokens 无记录，视为新 step）
-
-### Requirement: 内存累积与定时刷盘
-
-插件 SHALL 在内存对象上累积统计,定时器每 60 秒将内存统计整体写入 JSON 文件一次。进程退出时 SHALL 兜底刷盘一次。
-
-#### Scenario: 事件触发只改内存
-
-- **WHEN** 统计事件发生
-- **THEN** 插件 SHALL 只更新内存对象,不立即写磁盘
-
-#### Scenario: 定时器触发刷盘
-
-- **WHEN** 距上次刷盘已满 60 秒
-- **THEN** 插件 SHALL 将内存统计整体写入 JSON 文件
-
-#### Scenario: 进程退出刷盘
-
-- **WHEN** 进程收到 `beforeExit`/`SIGINT`/`SIGTERM`
-- **THEN** 插件 SHALL 最后刷盘一次,避免丢失最近统计
-
 ### Requirement: JSON 文件存储结构
 
 统计文件 SHALL 为 JSON，路径默认 `~/.local/share/opencode/round-robin-stats.json`（可由 `statsPath` 配置）。结构为以日期为 key 的对象，每个日期下为以 provider 名为 key 的对象，每个 provider 对应当天的累计。
@@ -117,6 +85,8 @@ token 归因到实际服务的 provider（而非 opencode 配置的 provider）�
 
 - **WHEN** 插件加载时读取到旧格式统计文件
 - **THEN** 插件 SHALL 正常加载（置空 store），SHALL NOT 自动迁移或修正历史数据
+
+## ADDED Requirements
 
 ### Requirement: Provider-session 关联
 

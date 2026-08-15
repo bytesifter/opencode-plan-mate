@@ -50,7 +50,7 @@ export function parseOptions(options: Record<string, unknown> | undefined): Pars
  * @throws provider 名不存在或缺 baseURL/apiKey 时抛出
  */
 export function collectProviders(
-  config: { provider?: Record<string, { options?: { apiKey?: string; baseURL?: string } }> },
+  config: { provider?: Record<string, { options?: { apiKey?: string; baseURL?: string }; models?: Record<string, unknown> }> },
   providers: string[],
 ): ProviderEntry[] {
   const providerMap = config.provider
@@ -74,7 +74,8 @@ export function collectProviders(
     }
     if (!seen.has(apiKey)) {
       seen.add(apiKey)
-      entries.push({ key: apiKey, baseURL, account: name })
+      const models = p.models ? Object.keys(p.models) : []
+      entries.push({ key: apiKey, baseURL, account: name, models })
     }
   }
   return entries

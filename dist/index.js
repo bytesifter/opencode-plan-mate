@@ -10744,7 +10744,7 @@ class JSONSchemaGenerator {
               if (val === undefined) {
                 if (this.unrepresentable === "throw") {
                   throw new Error("Literal `undefined` cannot be represented in JSON Schema");
-                } else {}
+                }
               } else if (typeof val === "bigint") {
                 if (this.unrepresentable === "throw") {
                   throw new Error("BigInt literals cannot be represented in JSON Schema");
@@ -12386,7 +12386,8 @@ function collectProviders(config2, providers) {
     }
     if (!seen.has(apiKey)) {
       seen.add(apiKey);
-      entries.push({ key: apiKey, baseURL, account: name });
+      const models = p.models ? Object.keys(p.models) : [];
+      entries.push({ key: apiKey, baseURL, account: name, models });
     }
   }
   return entries;
@@ -12395,6 +12396,7 @@ function collectProviders(config2, providers) {
 // src/pool.ts
 class ProviderPool {
   entries;
+  groups = new Map;
   cooldownMs;
   quotaCooldownMs;
   cooldowns = new Map;
@@ -12402,14 +12404,29 @@ class ProviderPool {
     this.entries = entries;
     this.cooldownMs = cooldownMs;
     this.quotaCooldownMs = quotaCooldownMs;
+    for (const e of entries) {
+      for (const m of e.models) {
+        const arr = this.groups.get(m);
+        if (arr) {
+          if (!arr.includes(e))
+            arr.push(e);
+        } else {
+          this.groups.set(m, [e]);
+        }
+      }
+    }
   }
-  next() {
+  next(model) {
     const now = Date.now();
-    const available = this.entries.filter((e) => !this.isCoolingDown(e.key, now));
+    const pool = model && this.groups.has(model) ? this.groups.get(model) : this.entries;
+    const available = pool.filter((e) => !this.isCoolingDown(e.key, now));
     if (available.length === 0)
       return null;
     const idx = Math.floor(Math.random() * available.length);
     return available[idx];
+  }
+  hasGroup(model) {
+    return this.groups.has(model);
   }
   markCooldown(key, ms) {
     this.cooldowns.set(key, { until: Date.now() + (ms ?? this.cooldownMs) });
@@ -12449,7 +12466,7 @@ function patchFetch(pool, callbacks) {
     if (!originalBaseURL) {
       return origFetch(input, init);
     }
-    const entry = pool.next();
+    const entry = pool.next(extractModel(init));
     if (!entry) {
       return origFetch(input, init);
     }
@@ -12457,6 +12474,11 @@ function patchFetch(pool, callbacks) {
     const newUrl = entry.baseURL + path;
     const headers = new Headers(init?.headers);
     headers.set("Authorization", `Bearer ${entry.key}`);
+    const sessionID = headers.get("X-Session-Id");
+    if (sessionID) {
+      headers.delete("X-Session-Id");
+      callbacks?.onCorrelate?.(sessionID, entry.account);
+    }
     const startMs = Date.now();
     const response = await origFetch(newUrl, { ...init, headers });
     const durationMs = Date.now() - startMs;
@@ -12485,6 +12507,17 @@ function resolveUrl(input) {
     return input.href;
   return input.url;
 }
+function extractModel(init) {
+  const body = init?.body;
+  if (typeof body !== "string")
+    return;
+  try {
+    const parsed = JSON.parse(body);
+    return typeof parsed.model === "string" ? parsed.model : undefined;
+  } catch {
+    return;
+  }
+}
 async function classify429(response) {
   try {
     const clone2 = response.clone();
@@ -12501,6 +12534,7 @@ async function classify429(response) {
 // src/stats.ts
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
+var TERMINAL_FINISH = new Set(["stop", "error", "unknown"]);
 var DEFAULT_FLUSH_MS = 60000;
 
 class StatsCollector {
@@ -12508,8 +12542,7 @@ class StatsCollector {
   path;
   flushMs;
   timer;
-  buffer = new Map;
-  committed = new Set;
+  lastTokens = new Map;
   constructor(path, opts = {}) {
     this.path = path;
     this.flushMs = opts.flushMs ?? DEFAULT_FLUSH_MS;
@@ -12519,25 +12552,32 @@ class StatsCollector {
       process.on("beforeExit", this.onBeforeExit);
     }
   }
-  recordUsage(info) {
+  recordUsage(info, provider) {
     if (!info.id || !info.tokens)
       return false;
-    if (this.committed.has(info.id))
+    const snapshot = {
+      input: num(info.tokens.input),
+      output: num(info.tokens.output),
+      reasoning: num(info.tokens.reasoning),
+      cacheRead: num(info.tokens.cache.read),
+      cacheWrite: num(info.tokens.cache.write)
+    };
+    if (isAllZero(snapshot))
       return false;
-    this.buffer.set(info.id, info);
-    if (info.finish) {
-      this.commitToStore(info);
-      this.buffer.delete(info.id);
-      this.committed.add(info.id);
-      return true;
+    const prev = this.lastTokens.get(info.id);
+    if (prev && sameSnapshot(prev, snapshot)) {
+      return false;
     }
-    return false;
+    this.commitToStore(info, provider);
+    this.lastTokens.set(info.id, snapshot);
+    return true;
   }
-  commitToStore(info) {
+  commitToStore(info, provider) {
     if (!info.tokens)
       return;
     const day = todayLocal();
-    const s = this.store[day] ?? newDayStats();
+    const dayData = this.store[day] ?? {};
+    const s = dayData[provider] ?? newProviderStats();
     s.req++;
     s.in += num(info.tokens.input);
     s.out += num(info.tokens.output);
@@ -12546,13 +12586,8 @@ class StatsCollector {
     s.cacheWrite += num(info.tokens.cache.write);
     if (typeof info.cost === "number")
       s.cost += info.cost;
-    this.store[day] = s;
-  }
-  drainBuffer() {
-    for (const info of this.buffer.values()) {
-      this.commitToStore(info);
-    }
-    this.buffer.clear();
+    dayData[provider] = s;
+    this.store[day] = dayData;
   }
   getStore() {
     return this.store;
@@ -12567,7 +12602,12 @@ class StatsCollector {
       return;
     }
     try {
-      this.store = JSON.parse(readFileSync(this.path, "utf8"));
+      const parsed = JSON.parse(readFileSync(this.path, "utf8"));
+      if (!isCompatibleFormat(parsed)) {
+        this.store = {};
+        return;
+      }
+      this.store = parsed;
     } catch {
       this.store = {};
     }
@@ -12575,16 +12615,32 @@ class StatsCollector {
   stop() {
     if (this.timer)
       clearInterval(this.timer);
-    this.drainBuffer();
     this.flush();
   }
   onBeforeExit = () => {
-    this.drainBuffer();
     this.flush();
   };
 }
-function newDayStats() {
+function newProviderStats() {
   return { req: 0, in: 0, out: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, cost: 0 };
+}
+function sameSnapshot(a, b) {
+  return a.input === b.input && a.output === b.output && a.reasoning === b.reasoning && a.cacheRead === b.cacheRead && a.cacheWrite === b.cacheWrite;
+}
+function isAllZero(s) {
+  return s.input === 0 && s.output === 0 && s.reasoning === 0 && s.cacheRead === 0 && s.cacheWrite === 0;
+}
+function isCompatibleFormat(data) {
+  if (typeof data !== "object" || data === null)
+    return false;
+  for (const v of Object.values(data)) {
+    if (typeof v !== "object" || v === null)
+      return false;
+    if ("req" in v && typeof v.req === "number")
+      return false;
+    break;
+  }
+  return true;
 }
 function num(v) {
   return typeof v === "number" && !Number.isNaN(v) ? v : 0;
@@ -12599,30 +12655,57 @@ function todayLocal() {
 
 // src/chart.ts
 var DEFAULT_DAYS = 7;
-var BAR_WIDTH = 16;
+var BAR_WIDTH = 12;
 function renderChart(store, days = DEFAULT_DAYS) {
   const entries = recentDays(store, days);
   if (entries.length === 0)
     return "暂无统计数据";
-  const maxReq = Math.max(...entries.map((e) => e.stats.req), 1);
-  const maxTok = Math.max(...entries.map((e) => totalToken(e.stats)), 1);
+  const allProviders = collectProviders2(entries);
+  if (allProviders.length === 0)
+    return "暂无统计数据";
+  const maxReq = Math.max(...entries.flatMap((e) => allProviders.map((p) => e.stats[p]?.req ?? 0)), 1);
+  const maxTok = Math.max(...entries.flatMap((e) => allProviders.map((p) => totalToken(e.stats[p]))), 1);
   const lines = [];
-  lines.push(`round-robin 近 ${days} 天统计`);
-  lines.push("日期      请求                 token");
+  lines.push(`round-robin 近 ${days} 天 per-provider 统计`);
+  const header = `日期      ${allProviders.map((p) => pad(p, 20)).join("  ")}`;
+  lines.push(header);
+  lines.push(`${" ".repeat(10)}${allProviders.map(() => "请求      token       ").join("  ")}`);
   for (const { day, stats } of entries) {
     const date5 = day.slice(5);
-    const tok = totalToken(stats);
-    const reqBar = bar(stats.req, maxReq, BAR_WIDTH);
-    const tokBar = bar(tok, maxTok, BAR_WIDTH);
-    lines.push(`${date5}  ${reqBar} ${String(stats.req).padStart(5)}   ${tokBar} ${fmtTok(tok).padStart(7)}`);
+    const cols = allProviders.map((p) => {
+      const ps = stats[p];
+      const req = ps?.req ?? 0;
+      const tok = ps ? totalToken(ps) : 0;
+      const reqBar = bar(req, maxReq, BAR_WIDTH);
+      const tokBar = bar(tok, maxTok, BAR_WIDTH);
+      return `${reqBar} ${String(req).padStart(4)} ${tokBar} ${fmtTok(tok).padStart(6)}`;
+    });
+    lines.push(`${date5}  ${cols.join("  ")}`);
   }
+  lines.push("");
+  const totals = allProviders.map((p) => {
+    const totalReq = entries.reduce((sum, e) => sum + (e.stats[p]?.req ?? 0), 0);
+    const totalTok = entries.reduce((sum, e) => sum + (e.stats[p] ? totalToken(e.stats[p]) : 0), 0);
+    return `${pad(p, 20)} 请求=${totalReq} token=${fmtTok(totalTok)}`;
+  });
+  lines.push(`合计: ${totals.join("  ")}`);
   return lines.join(`
 `);
 }
 function recentDays(store, days) {
   return Object.entries(store).sort((a, b) => b[0].localeCompare(a[0])).slice(0, days).map(([day, stats]) => ({ day, stats }));
 }
+function collectProviders2(entries) {
+  const set2 = new Set;
+  for (const { stats } of entries) {
+    for (const p of Object.keys(stats))
+      set2.add(p);
+  }
+  return [...set2].sort();
+}
 function totalToken(s) {
+  if (!s)
+    return 0;
   return s.in + s.out + s.reasoning + s.cacheRead + s.cacheWrite;
 }
 function bar(value, max, width) {
@@ -12635,6 +12718,11 @@ function fmtTok(n) {
   if (n >= 1000)
     return (n / 1000).toFixed(1) + "k";
   return String(n);
+}
+function pad(s, width) {
+  if (s.length > width)
+    return s.slice(0, width);
+  return s.padEnd(width);
 }
 
 // src/logger.ts
@@ -12732,6 +12820,7 @@ var globalStats = null;
 var globalLogger = null;
 var globalPool = null;
 var fetchPatched = false;
+var corrMap = new Map;
 var server = async (_input, options) => {
   const opts = parseOptions(options);
   if (!globalStats) {
@@ -12751,6 +12840,9 @@ var server = async (_input, options) => {
       const entries = collectProviders(config2, opts.providers);
       globalPool = new ProviderPool(entries, opts.cooldownMs, opts.quotaCooldownMs);
       patchFetch(globalPool, {
+        onCorrelate: (sessionID, account) => {
+          corrMap.set(sessionID, account);
+        },
         onResponse: (pool, entry, status, durationMs, cooldownType) => {
           const idx = pool.keyIndex(entry.key);
           const account = entry.account;
@@ -12767,17 +12859,22 @@ var server = async (_input, options) => {
       const e = event;
       if (e.type === "message.updated" && e.properties?.info) {
         const info = e.properties.info;
-        const committed = globalStats.recordUsage(info);
+        const provider = info.sessionID && corrMap.get(info.sessionID) || info.providerID || "unknown";
+        const committed = globalStats.recordUsage(info, provider);
         if (committed) {
           const ctx = {
             sessionID: info.sessionID ? info.sessionID.slice(0, 8) : undefined,
             modelID: info.modelID,
-            providerID: info.providerID,
+            providerID: provider,
             mode: info.mode,
             agent: info.agent,
             durationMs: typeof info.time?.created === "number" && typeof info.time?.completed === "number" ? info.time.completed - info.time.created : 0
           };
           globalLogger.logUsage(info.tokens, typeof info.cost === "number" ? info.cost : 0, ctx);
+        }
+        if (info.finish && (info.finish === "stop" || info.finish === "error" || info.finish === "unknown")) {
+          if (info.sessionID)
+            corrMap.delete(info.sessionID);
         }
       }
     },

@@ -15,6 +15,7 @@ interface CooldownEntry {
  */
 export class ProviderPool {
   private readonly entries: ProviderEntry[]
+  private readonly groups = new Map<string, ProviderEntry[]>()
   readonly cooldownMs: number
   readonly quotaCooldownMs: number
   private readonly cooldowns = new Map<string, CooldownEntry>()
@@ -23,19 +24,36 @@ export class ProviderPool {
     this.entries = entries
     this.cooldownMs = cooldownMs
     this.quotaCooldownMs = quotaCooldownMs
+    for (const e of entries) {
+      for (const m of e.models) {
+        const arr = this.groups.get(m)
+        if (arr) {
+          if (!arr.includes(e)) arr.push(e)
+        } else {
+          this.groups.set(m, [e])
+        }
+      }
+    }
   }
 
   /**
-   * 随机选一个非熔断 provider;全部熔断时返回 null(passthrough)。
+   * 随机选一个非熔断 provider。
    *
+   * @param model - 请求 body 中的模型名,有对应分组时从分组中选
    * @returns 选中的 ProviderEntry,或 null(全熔断)
    */
-  next(): ProviderEntry | null {
+  next(model?: string): ProviderEntry | null {
     const now = Date.now()
-    const available = this.entries.filter((e) => !this.isCoolingDown(e.key, now))
+    const pool = model && this.groups.has(model) ? this.groups.get(model)! : this.entries
+    const available = pool.filter((e) => !this.isCoolingDown(e.key, now))
     if (available.length === 0) return null
     const idx = Math.floor(Math.random() * available.length)
     return available[idx]
+  }
+
+  /** 检查某 model 是否有对应分组 */
+  hasGroup(model: string): boolean {
+    return this.groups.has(model)
   }
 
   /**

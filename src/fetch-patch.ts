@@ -16,6 +16,8 @@ export interface FetchPatchCallbacks {
     durationMs: number,
     cooldownType?: CooldownType,
   ) => void
+  /** 建立 sessionID-provider 关联(选中 provider 后,请求发出前) */
+  onCorrelate?: (sessionID: string, account: string) => void
 }
 
 /** 429 状态码:Too Many Requests,触发该 provider 熔断 */
@@ -42,7 +44,7 @@ export function patchFetch(pool: ProviderPool, callbacks?: FetchPatchCallbacks):
       // URL 不匹配任何已配置 baseURL:passthrough
       return origFetch(input, init)
     }
-    const entry = pool.next()
+    const entry = pool.next(extractModel(init))
     if (!entry) {
       // 全熔断:passthrough 原始请求
       return origFetch(input, init)
@@ -52,6 +54,11 @@ export function patchFetch(pool: ProviderPool, callbacks?: FetchPatchCallbacks):
     const newUrl = entry.baseURL + path
     const headers = new Headers(init?.headers)
     headers.set("Authorization", `Bearer ${entry.key}`)
+    const sessionID = headers.get("X-Session-Id")
+    if (sessionID) {
+      headers.delete("X-Session-Id")
+      callbacks?.onCorrelate?.(sessionID, entry.account)
+    }
     const startMs = Date.now()
     const response = await origFetch(newUrl, { ...init, headers })
     const durationMs = Date.now() - startMs
@@ -82,6 +89,22 @@ function resolveUrl(input: RequestInfo | URL): string {
   if (typeof input === "string") return input
   if (input instanceof URL) return input.href
   return input.url
+}
+
+/**
+ * 从 RequestInit.body 提取 model 字段。
+ *
+ * body 为 JSON 字符串时解析并返回 `model` 字段;否则返回 undefined(退化到扁平池)。
+ */
+function extractModel(init?: RequestInit): string | undefined {
+  const body = init?.body
+  if (typeof body !== "string") return undefined
+  try {
+    const parsed = JSON.parse(body) as { model?: unknown }
+    return typeof parsed.model === "string" ? parsed.model : undefined
+  } catch {
+    return undefined
+  }
 }
 
 /**

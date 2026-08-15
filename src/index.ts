@@ -16,6 +16,7 @@ let globalStats: StatsCollector | null = null
 let globalLogger: Logger | null = null
 let globalPool: ProviderPool | null = null
 let fetchPatched = false
+const corrMap = new Map<string, string>()
 
 /**
  * 插件 server 入口。
@@ -46,6 +47,9 @@ const server: Plugin = async (_input, options) => {
       )
       globalPool = new ProviderPool(entries, opts.cooldownMs, opts.quotaCooldownMs)
       patchFetch(globalPool, {
+        onCorrelate: (sessionID, account) => {
+          corrMap.set(sessionID, account)
+        },
         onResponse: (pool, entry, status, durationMs, cooldownType) => {
           const idx = pool.keyIndex(entry.key)
           const account = entry.account
@@ -74,12 +78,13 @@ const server: Plugin = async (_input, options) => {
       }
       if (e.type === "message.updated" && e.properties?.info) {
         const info = e.properties.info
-        const committed = globalStats!.recordUsage(info)
+        const provider = (info.sessionID && corrMap.get(info.sessionID)) || info.providerID || "unknown"
+        const committed = globalStats!.recordUsage(info, provider)
         if (committed) {
           const ctx: EventContext = {
             sessionID: info.sessionID ? info.sessionID.slice(0, 8) : undefined,
             modelID: info.modelID,
-            providerID: info.providerID,
+            providerID: provider,
             mode: info.mode,
             agent: info.agent,
             durationMs:
@@ -88,6 +93,9 @@ const server: Plugin = async (_input, options) => {
                 : 0,
           }
           globalLogger!.logUsage(info.tokens as UsageTokens, typeof info.cost === "number" ? info.cost : 0, ctx)
+        }
+        if (info.finish && (info.finish === "stop" || info.finish === "error" || info.finish === "unknown")) {
+          if (info.sessionID) corrMap.delete(info.sessionID)
         }
       }
     },

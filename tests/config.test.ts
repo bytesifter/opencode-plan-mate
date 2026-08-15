@@ -3,8 +3,8 @@ import { parseOptions, collectProviders } from "../src/config"
 
 const fakeConfig = {
   provider: {
-    "volxc9208": { options: { apiKey: "k1", baseURL: "https://x/coding/v3" } },
-    "volxc5425": { options: { apiKey: "k3", baseURL: "https://x/coding/v3" } },
+    "volxc9208": { options: { apiKey: "k1", baseURL: "https://x/coding/v3" }, models: { "glm-5.2": {}, "deepseek-v4-flash": {} } },
+    "volxc5425": { options: { apiKey: "k3", baseURL: "https://x/coding/v3" }, models: { "glm-5.2": {} } },
     "vollqh5426": { options: { apiKey: "k2", baseURL: "https://x/coding/v3" } },
     "volxc9208-agentplan": { options: { apiKey: "k4", baseURL: "https://x/plan/v3" } },
   },
@@ -50,8 +50,10 @@ test("parseOptions: logDir 可选,与 logPath 独立", () => {
 test("collectProviders: 返回扁平列表(不分组)", () => {
   const entries = collectProviders(fakeConfig, ["volxc9208", "volxc5425", "vollqh5426", "volxc9208-agentplan"])
   expect(entries).toHaveLength(4)
-  expect(entries[0]).toEqual({ key: "k1", baseURL: "https://x/coding/v3", account: "volxc9208" })
-  expect(entries[3]).toEqual({ key: "k4", baseURL: "https://x/plan/v3", account: "volxc9208-agentplan" })
+  expect(entries[0]).toEqual({ key: "k1", baseURL: "https://x/coding/v3", account: "volxc9208", models: ["glm-5.2", "deepseek-v4-flash"] })
+  expect(entries[1]).toEqual({ key: "k3", baseURL: "https://x/coding/v3", account: "volxc5425", models: ["glm-5.2"] })
+  expect(entries[2]).toEqual({ key: "k2", baseURL: "https://x/coding/v3", account: "vollqh5426", models: [] })
+  expect(entries[3]).toEqual({ key: "k4", baseURL: "https://x/plan/v3", account: "volxc9208-agentplan", models: [] })
 })
 
 test("collectProviders: key 去重", () => {

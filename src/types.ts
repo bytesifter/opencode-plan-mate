@@ -26,12 +26,14 @@ export interface ProviderEntry {
   baseURL: string
   /** 账号名(provider 名,用于日志) */
   account: string
+  /** 该 provider 支持的模型名列表(从 config.models 的 key 提取) */
+  models: string[]
 }
 
 /**
- * 单日统计项。
+ * 单个 provider 的统计项(一天内累计)。
  */
-export interface DayStats {
+export interface ProviderStats {
   /** 请求数 */
   req: number
   /** 输入 token */
@@ -49,9 +51,9 @@ export interface DayStats {
 }
 
 /**
- * 统计存储:以日期(YYYY-MM-DD)为 key。
+ * 统计存储:以日期(YYYY-MM-DD)为 key,每天下按 provider 名为 key。
  */
-export type StatsStore = Record<string, DayStats>
+export type StatsStore = Record<string, Record<string, ProviderStats>>
 
 /** 日志级别 */
 export type LogLevel = "INFO" | "WARN" | "ERROR"
