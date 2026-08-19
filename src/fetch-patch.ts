@@ -23,12 +23,15 @@ export interface FetchPatchCallbacks {
 /** 429 状态码:Too Many Requests,触发该 provider 熔断 */
 const HTTP_TOO_MANY_REQUESTS = 429
 
+/** 402 状态码:Payment Required(如 Insufficient Balance 余额不足),触发该 provider 长熔断 */
+const HTTP_PAYMENT_REQUIRED = 402
+
 /**
  * monkey-patch `globalThis.fetch`,随机选 provider 并替换 URL + Authorization。
  *
  * - 从所有 provider 中随机选一个(跳过熔断中的),替换请求 URL 和 Authorization 头
  * - 全部熔断或 URL 不匹配任何已配置 baseURL 时 passthrough
- * - 429 仅标记熔断,不在内部换 provider 重发
+ * - 429/402 仅标记熔断,不在内部换 provider 重发
  *
  * @param pool - provider 池
  * @param callbacks - 响应回调(用于日志)
@@ -44,7 +47,7 @@ export function patchFetch(pool: ProviderPool, callbacks?: FetchPatchCallbacks):
       // URL 不匹配任何已配置 baseURL:passthrough
       return origFetch(input, init)
     }
-    const entry = pool.next(extractModel(init))
+    const entry = pool.next(extractModel(init), originalBaseURL)
     if (!entry) {
       // 全熔断:passthrough 原始请求
       return origFetch(input, init)
@@ -67,6 +70,10 @@ export function patchFetch(pool: ProviderPool, callbacks?: FetchPatchCallbacks):
       cooldownType = await classify429(response)
       const ms = cooldownType === "quota-exhausted" ? pool.quotaCooldownMs : pool.cooldownMs
       pool.markCooldown(entry.key, ms)
+    } else if (response.status === HTTP_PAYMENT_REQUIRED) {
+      // 余额不足:不会自愈,按配额耗尽长时间冷却,不读响应体分类
+      cooldownType = "quota-exhausted"
+      pool.markCooldown(entry.key, pool.quotaCooldownMs)
     }
     callbacks?.onResponse?.(pool, entry, response.status, durationMs, cooldownType)
     return response

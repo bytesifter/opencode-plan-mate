@@ -12396,7 +12396,7 @@ function collectProviders(config2, providers) {
 // src/pool.ts
 class ProviderPool {
   entries;
-  groups = new Map;
+  byBaseURL = new Map;
   cooldownMs;
   quotaCooldownMs;
   cooldowns = new Map;
@@ -12405,28 +12405,30 @@ class ProviderPool {
     this.cooldownMs = cooldownMs;
     this.quotaCooldownMs = quotaCooldownMs;
     for (const e of entries) {
-      for (const m of e.models) {
-        const arr = this.groups.get(m);
-        if (arr) {
-          if (!arr.includes(e))
-            arr.push(e);
-        } else {
-          this.groups.set(m, [e]);
-        }
+      const arr = this.byBaseURL.get(e.baseURL);
+      if (arr) {
+        arr.push(e);
+      } else {
+        this.byBaseURL.set(e.baseURL, [e]);
       }
     }
   }
-  next(model) {
+  next(model, originBaseURL) {
     const now = Date.now();
-    const pool = model && this.groups.has(model) ? this.groups.get(model) : this.entries;
+    const basePool = originBaseURL ? this.byBaseURL.get(originBaseURL) : this.entries;
+    if (!basePool || basePool.length === 0)
+      return null;
+    let pool = basePool;
+    if (model) {
+      const filtered = basePool.filter((e) => e.models.includes(model));
+      if (filtered.length > 0)
+        pool = filtered;
+    }
     const available = pool.filter((e) => !this.isCoolingDown(e.key, now));
     if (available.length === 0)
       return null;
     const idx = Math.floor(Math.random() * available.length);
     return available[idx];
-  }
-  hasGroup(model) {
-    return this.groups.has(model);
   }
   markCooldown(key, ms) {
     this.cooldowns.set(key, { until: Date.now() + (ms ?? this.cooldownMs) });
@@ -12458,6 +12460,7 @@ class ProviderPool {
 
 // src/fetch-patch.ts
 var HTTP_TOO_MANY_REQUESTS = 429;
+var HTTP_PAYMENT_REQUIRED = 402;
 function patchFetch(pool, callbacks) {
   const origFetch = globalThis.fetch;
   const patchedFetch = async (input, init) => {
@@ -12466,7 +12469,7 @@ function patchFetch(pool, callbacks) {
     if (!originalBaseURL) {
       return origFetch(input, init);
     }
-    const entry = pool.next(extractModel(init));
+    const entry = pool.next(extractModel(init), originalBaseURL);
     if (!entry) {
       return origFetch(input, init);
     }
@@ -12487,6 +12490,9 @@ function patchFetch(pool, callbacks) {
       cooldownType = await classify429(response);
       const ms = cooldownType === "quota-exhausted" ? pool.quotaCooldownMs : pool.cooldownMs;
       pool.markCooldown(entry.key, ms);
+    } else if (response.status === HTTP_PAYMENT_REQUIRED) {
+      cooldownType = "quota-exhausted";
+      pool.markCooldown(entry.key, pool.quotaCooldownMs);
     }
     callbacks?.onResponse?.(pool, entry, response.status, durationMs, cooldownType);
     return response;
@@ -12794,7 +12800,7 @@ class Logger {
   }
 }
 function statusLevel(status) {
-  if (status === 429)
+  if (status === 429 || status === 402)
     return "WARN";
   if (status >= 500)
     return "ERROR";

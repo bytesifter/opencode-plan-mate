@@ -43,7 +43,7 @@ test("URL 匹配:替换 Authorization 和 URL", async () => {
   expect(receivedUrl).toMatch(/^https:\/\/x\.example\/coding\/v3\/chat\/completions$/)
 })
 
-test("跨端点:coding 请求可能被路由到 plan baseURL", async () => {
+test("同接入点内轮询:coding 请求不路由到 plan baseURL", async () => {
   let receivedUrl = ""
   let receivedAuth = ""
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -65,12 +65,10 @@ test("跨端点:coding 请求可能被路由到 plan baseURL", async () => {
   }
   unpatch()
 
-  // 两种 baseURL 都应出现
-  expect(urls.some((u) => u.includes("coding"))).toBe(true)
-  expect(urls.some((u) => u.includes("plan"))).toBe(true)
-  // 请求 URL 应与选中的 baseURL 匹配
+  // 只应在 coding 接入点内轮询,不跨到 plan 接入点
+  expect(urls.every((u) => u.includes("coding"))).toBe(true)
   expect(keys).toContain("k1")
-  expect(keys).toContain("k2")
+  expect(keys).not.toContain("k2")
 })
 
 test("URL 不匹配任何 baseURL:passthrough", async () => {
@@ -210,6 +208,60 @@ test("响应体非 JSON 的 429 fallback 到 rate-limit", async () => {
   expect(types).toContain("rate-limit")
 })
 
+test("402 响应归为 quota-exhausted 并标记熔断", async () => {
+  const pool = new ProviderPool(codingEntries, 60000, 3600000)
+  globalThis.fetch = (async () =>
+    new Response(
+      JSON.stringify({ error: { message: "Insufficient Balance" } }),
+      { status: 402, headers: { "Content-Type": "application/json" } },
+    )) as unknown as typeof globalThis.fetch
+
+  const types: string[] = []
+  const unpatch = patchFetch(pool, {
+    onResponse: (_pool, _entry, _status, _duration, cooldownType) => {
+      if (cooldownType) types.push(cooldownType)
+    },
+  })
+  await fetch("https://x.example/coding/v3/chat/completions", {})
+  unpatch()
+
+  expect(types).toEqual(["quota-exhausted"])
+  expect(pool.isCoolingDown("k1") || pool.isCoolingDown("k2")).toBe(true)
+})
+
+test("402 冷却时长使用 quotaCooldownMs 而非 cooldownMs", async () => {
+  const singleEntry: ProviderEntry[] = [
+    { key: "k1", baseURL: "https://x.example/coding/v3", account: "account1", models: [] },
+  ]
+  const pool = new ProviderPool(singleEntry, 60000, 500)
+  globalThis.fetch = (async () => new Response("Insufficient Balance", { status: 402 })) as unknown as typeof globalThis.fetch
+
+  const unpatch = patchFetch(pool)
+  await fetch("https://x.example/coding/v3/chat/completions", {})
+  unpatch()
+
+  // cooldownMs=60000 远大于 quotaCooldownMs=500:若误用 cooldownMs,则 1000ms 后仍在冷却
+  const now = Date.now()
+  expect(pool.isCoolingDown("k1", now)).toBe(true)
+  expect(pool.isCoolingDown("k1", now + 1000)).toBe(false)
+})
+
+test("未配 quotaCooldownMs 时 402 使用默认 3600000ms 长冷却", async () => {
+  const singleEntry: ProviderEntry[] = [
+    { key: "k1", baseURL: "https://x.example/coding/v3", account: "account1", models: [] },
+  ]
+  const pool = new ProviderPool(singleEntry, 60000)
+  globalThis.fetch = (async () => new Response("Insufficient Balance", { status: 402 })) as unknown as typeof globalThis.fetch
+
+  const unpatch = patchFetch(pool)
+  await fetch("https://x.example/coding/v3/chat/completions", {})
+  unpatch()
+
+  const now = Date.now()
+  // cooldownMs=60000 已过期,但默认 quotaCooldownMs=3600000 远未到期:61s 后仍应处于冷却
+  expect(pool.isCoolingDown("k1", now + 61000)).toBe(true)
+})
+
 test("X-Session-Id 读取 + onCorrelate 回调 + 删除头", async () => {
   let receivedSessionId: string | null = null
   globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
@@ -249,7 +301,7 @@ test("无 X-Session-Id 头时不回调", async () => {
   expect(correlated).toBe(false)
 })
 
-test("body 含 model 字段时按分组选 provider", async () => {
+test("body 含 model 字段时按接入点分组选 provider(不跨接入点)", async () => {
   const entries: ProviderEntry[] = [
     { key: "k1", baseURL: "https://ark.example/coding/v3", account: "ark1", models: ["glm-5.2"] },
     { key: "k2", baseURL: "https://api.deepseek.com", account: "deepseek", models: ["deepseek-v4-flash"] },
@@ -270,10 +322,11 @@ test("body 含 model 字段时按分组选 provider", async () => {
   }
   unpatch()
 
-  expect(selectedAccounts.every((a) => a === "deepseek")).toBe(true)
+  // 请求从 ARK 端点发出:即使 deepseek 端点支持该 model,也不跨接入点,退化到 ARK 接入点池
+  expect(selectedAccounts.every((a) => a === "ark1")).toBe(true)
 })
 
-test("body 不可解析时退化到扁平池", async () => {
+test("body 不可解析时退化到同接入点池", async () => {
   const entries: ProviderEntry[] = [
     { key: "k1", baseURL: "https://ark.example/coding/v3", account: "ark1", models: ["glm-5.2"] },
     { key: "k2", baseURL: "https://api.deepseek.com", account: "deepseek", models: ["deepseek-v4-flash"] },
@@ -293,6 +346,35 @@ test("body 不可解析时退化到扁平池", async () => {
   unpatch()
 
   const uniqueAccounts = new Set(selectedAccounts)
-  expect(uniqueAccounts.has("ark1")).toBe(true)
-  expect(uniqueAccounts.has("deepseek")).toBe(true)
+  expect(uniqueAccounts).toEqual(new Set(["ark1"]))
+})
+
+test("同接入点下 URL 不变仅换 Authorization", async () => {
+  const entries: ProviderEntry[] = [
+    { key: "k1", baseURL: "https://ark.example/coding/v3", account: "ark1", models: ["deepseek-v4-flash"] },
+    { key: "k2", baseURL: "https://ark.example/coding/v3", account: "ark2", models: ["deepseek-v4-flash"] },
+  ]
+  const pool = new ProviderPool(entries, 60000)
+  let receivedUrl = ""
+  let receivedAuth = ""
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    receivedUrl = typeof input === "string" ? input : input.toString()
+    receivedAuth = new Headers(init?.headers).get("Authorization") ?? ""
+    return new Response("ok", { status: 200 })
+  }) as unknown as typeof globalThis.fetch
+
+  const auths: string[] = []
+  const unpatch = patchFetch(pool, {
+    onResponse: (_pool, entry, _status, _duration) => auths.push(entry.key),
+  })
+  for (let i = 0; i < 30; i++) {
+    await fetch("https://ark.example/coding/v3/chat/completions", {
+      body: JSON.stringify({ model: "deepseek-v4-flash", messages: [] }),
+    })
+  }
+  unpatch()
+
+  expect(receivedUrl).toBe("https://ark.example/coding/v3/chat/completions")
+  expect(new Set(auths)).toEqual(new Set(["k1", "k2"]))
+  expect(receivedAuth).toMatch(/^Bearer (k1|k2)$/)
 })

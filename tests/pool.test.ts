@@ -110,31 +110,45 @@ test("markCooldown(key, ms) 自定义时长覆盖默认 cooldownMs", async () =>
   expect(pool.isCoolingDown("k1")).toBe(false)
 })
 
-test("按模型分组选择:同模型跨 baseURL", () => {
+test("同接入点+同模型分组:不跨接入点轮询", () => {
   const entries: ProviderEntry[] = [
     { key: "k1", baseURL: "https://ark.example/coding/v3", account: "ark1", models: ["glm-5.2", "deepseek-v4-flash"] },
     { key: "k2", baseURL: "https://ark.example/coding/v3", account: "ark2", models: ["glm-5.2", "deepseek-v4-flash"] },
     { key: "k3", baseURL: "https://api.deepseek.com", account: "deepseek", models: ["deepseek-v4-flash"] },
   ]
   const pool = new ProviderPool(entries, 60000)
-  expect(pool.hasGroup("glm-5.2")).toBe(true)
-  expect(pool.hasGroup("deepseek-v4-flash")).toBe(true)
-  expect(pool.hasGroup("unknown-model")).toBe(false)
+
+  // 从 ARK 接入点发出的 deepseek-v4-flash 请求:只在 ARK 内轮
+  const arkKeys = new Set<string>()
+  for (let i = 0; i < 100; i++) {
+    arkKeys.add(pool.next("deepseek-v4-flash", "https://ark.example/coding/v3")!.key)
+  }
+  expect(arkKeys).toEqual(new Set(["k1", "k2"]))
+
+  // 从 deepseek 接入点发出的 deepseek-v4-flash 请求:只在 deepseek 内轮
+  const dsKeys = new Set<string>()
+  for (let i = 0; i < 100; i++) {
+    dsKeys.add(pool.next("deepseek-v4-flash", "https://api.deepseek.com")!.key)
+  }
+  expect(dsKeys).toEqual(new Set(["k3"]))
+})
+
+test("同接入点内不同模型选择不同分组", () => {
+  const entries: ProviderEntry[] = [
+    { key: "k1", baseURL: "https://ark.example/coding/v3", account: "ark1", models: ["glm-5.2"] },
+    { key: "k2", baseURL: "https://ark.example/coding/v3", account: "ark2", models: ["glm-5.2", "deepseek-v4-flash"] },
+    { key: "k3", baseURL: "https://api.deepseek.com", account: "deepseek", models: ["deepseek-v4-flash"] },
+  ]
+  const pool = new ProviderPool(entries, 60000)
 
   const glmKeys = new Set<string>()
   for (let i = 0; i < 100; i++) {
-    glmKeys.add(pool.next("glm-5.2")!.key)
+    glmKeys.add(pool.next("glm-5.2", "https://ark.example/coding/v3")!.key)
   }
   expect(glmKeys).toEqual(new Set(["k1", "k2"]))
-
-  const dsKeys = new Set<string>()
-  for (let i = 0; i < 100; i++) {
-    dsKeys.add(pool.next("deepseek-v4-flash")!.key)
-  }
-  expect(dsKeys).toEqual(new Set(["k1", "k2", "k3"]))
 })
 
-test("model 无分组时退化到扁平池", () => {
+test("model 无匹配时退化到同接入点池", () => {
   const entries: ProviderEntry[] = [
     { key: "k1", baseURL: "https://ark.example/coding/v3", account: "ark1", models: ["glm-5.2"] },
     { key: "k2", baseURL: "https://api.deepseek.com", account: "deepseek", models: ["deepseek-v4-flash"] },
@@ -142,12 +156,12 @@ test("model 无分组时退化到扁平池", () => {
   const pool = new ProviderPool(entries, 60000)
   const keys = new Set<string>()
   for (let i = 0; i < 100; i++) {
-    keys.add(pool.next("unknown-model")!.key)
+    keys.add(pool.next("unknown-model", "https://ark.example/coding/v3")!.key)
   }
-  expect(keys).toEqual(new Set(["k1", "k2"]))
+  expect(keys).toEqual(new Set(["k1"]))
 })
 
-test("无 model 参数时退化到扁平池", () => {
+test("无 model 参数时退化到同接入点池", () => {
   const entries: ProviderEntry[] = [
     { key: "k1", baseURL: "https://ark.example/coding/v3", account: "ark1", models: ["glm-5.2"] },
     { key: "k2", baseURL: "https://api.deepseek.com", account: "deepseek", models: ["deepseek-v4-flash"] },
@@ -155,7 +169,27 @@ test("无 model 参数时退化到扁平池", () => {
   const pool = new ProviderPool(entries, 60000)
   const keys = new Set<string>()
   for (let i = 0; i < 100; i++) {
-    keys.add(pool.next()!.key)
+    keys.add(pool.next(undefined, "https://ark.example/coding/v3")!.key)
   }
-  expect(keys).toEqual(new Set(["k1", "k2"]))
+  expect(keys).toEqual(new Set(["k1"]))
+})
+
+test("originBaseURL 不在配置中时返回 null", () => {
+  const entries: ProviderEntry[] = [
+    { key: "k1", baseURL: "https://ark.example/coding/v3", account: "ark1", models: ["glm-5.2"] },
+  ]
+  const pool = new ProviderPool(entries, 60000)
+  expect(pool.next("glm-5.2", "https://unconfigured.example/api")).toBeNull()
+})
+
+test("同接入点分组全熔断时返回 null(不跨接入点兜底)", () => {
+  const entries: ProviderEntry[] = [
+    { key: "k1", baseURL: "https://ark.example/coding/v3", account: "ark1", models: ["deepseek-v4-flash"] },
+    { key: "k2", baseURL: "https://api.deepseek.com", account: "deepseek", models: ["deepseek-v4-flash"] },
+  ]
+  const pool = new ProviderPool(entries, 60000)
+  pool.markCooldown("k1")
+  for (let i = 0; i < 100; i++) {
+    expect(pool.next("deepseek-v4-flash", "https://ark.example/coding/v3")).toBeNull()
+  }
 })

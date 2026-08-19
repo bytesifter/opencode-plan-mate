@@ -112,7 +112,7 @@ export class Logger {
 
 /** 根据 HTTP 状态码选择日志级别 */
 function statusLevel(status: number): LogLevel {
-  if (status === 429) return "WARN"
+  if (status === 429 || status === 402) return "WARN"
   if (status >= 500) return "ERROR"
   return "INFO"
 }

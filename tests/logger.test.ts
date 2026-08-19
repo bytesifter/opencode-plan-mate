@@ -47,16 +47,18 @@ test("key 脱敏:禁止明文,账号名明文", () => {
   expect(content).toContain("volxc9208")
 })
 
-test("日志级别:200=INFO, 429=WARN, 500=ERROR", () => {
+test("日志级别:200=INFO, 429=WARN, 402=WARN, 500=ERROR", () => {
   const l = new Logger(logPath)
   l.logFetch("p1", 0, "..1234", 200, 10)
   l.logFetch("p2", 1, "..5678", 429, 20)
+  l.logFetch("p4", 3, "..4567", 402, 15)
   l.logFetch("p3", 2, "..9abc", 500, 30)
   const content = readFileSync(logPath, "utf8")
   const lines = content.trim().split("\n")
   expect(lines[0]).toContain("INFO")
   expect(lines[1]).toContain("WARN")
-  expect(lines[2]).toContain("ERROR")
+  expect(lines[2]).toContain("WARN")
+  expect(lines[3]).toContain("ERROR")
 })
 
 test("429 冷却日志含账号名/WARN 级别", () => {
