@@ -1,5 +1,6 @@
 import { test, expect } from "bun:test"
 import { parseOptions, collectProviders } from "../src/config"
+import { homedir } from "node:os"
 
 const fakeConfig = {
   provider: {
@@ -28,12 +29,12 @@ test("parseOptions: cooldownMs 默认 60000,可自定义", () => {
   expect(r2.cooldownMs).toBe(30000)
 })
 
-test("parseOptions: statsPath 与 logPath 可选", () => {
+test("parseOptions: statsDir 与 logPath 可选", () => {
   const r = parseOptions({ providers: ["a"] })
-  expect(r.statsPath).toBeUndefined()
+  expect(r.statsDir).toBeUndefined()
   expect(r.logPath).toBeUndefined()
-  const r2 = parseOptions({ providers: ["a"], statsPath: "/s.json", logPath: "/l.log" })
-  expect(r2.statsPath).toBe("/s.json")
+  const r2 = parseOptions({ providers: ["a"], statsDir: "/s", logPath: "/l.log" })
+  expect(r2.statsDir).toBe("/s")
   expect(r2.logPath).toBe("/l.log")
 })
 
@@ -45,6 +46,25 @@ test("parseOptions: logDir 可选,与 logPath 独立", () => {
   const r3 = parseOptions({ providers: ["a"], logDir: "/d", logPath: "/p.log" })
   expect(r3.logDir).toBe("/d")
   expect(r3.logPath).toBe("/p.log")
+})
+
+test("parseOptions: planStats.accounts 映射解析", () => {
+  const r = parseOptions({ providers: ["a"] })
+  expect(r.planStats).toBeUndefined()
+  const r2 = parseOptions({ providers: ["a"], planStats: { accounts: { "账号A": "~/arkcli-a", "账号B": "/abs/b" } } })
+  expect(r2.planStats?.accounts["账号A"]).toBe(homedir() + "/arkcli-a")
+  expect(r2.planStats?.accounts["账号B"]).toBe("/abs/b")
+  // 过滤 key/value 非法项
+  const r3 = parseOptions({ providers: ["a"], planStats: { accounts: { "ok": "/x", "": "/y", "bad": "" } } })
+  expect(Object.keys(r3.planStats?.accounts ?? {})).toEqual(["ok"])
+  // 空映射/非对象 → 未配置
+  const r4 = parseOptions({ providers: ["a"], planStats: { accounts: {} } })
+  expect(r4.planStats).toBeUndefined()
+  const r5 = parseOptions({ providers: ["a"], planStats: { accounts: "not-obj" as unknown } })
+  expect(r5.planStats).toBeUndefined()
+  // profiles 旧键不再生效
+  const r6 = parseOptions({ providers: ["a"], planStats: { profiles: ["x"] } as unknown })
+  expect(r6.planStats).toBeUndefined()
 })
 
 test("collectProviders: 返回扁平列表(不分组)", () => {

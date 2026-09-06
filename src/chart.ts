@@ -93,7 +93,7 @@ function totalToken(s: ProviderStats | undefined): number {
 }
 
 /** 生成归一化柱:█ 填充,· 空白 */
-function bar(value: number, max: number, width: number): string {
+export function bar(value: number, max: number, width: number): string {
   if (max <= 0) return " ".repeat(width)
   const filled = Math.round((value / max) * width)
   return "█".repeat(filled).padEnd(width, "·")
@@ -106,7 +106,7 @@ function fmtTok(n: number): string {
 }
 
 /** 截断或填充字符串到指定宽度 */
-function pad(s: string, width: number): string {
+export function pad(s: string, width: number): string {
   if (s.length > width) return s.slice(0, width)
   return s.padEnd(width)
 }

@@ -1,4 +1,6 @@
 import type { ParsedOptions, ProviderEntry } from "./types"
+import { homedir } from "node:os"
+import { join } from "node:path"
 
 /** 默认冷却时长(毫秒),请求太快 429 后该 provider 暂时停用 */
 const DEFAULT_COOLDOWN_MS = 60000
@@ -33,10 +35,36 @@ export function parseOptions(options: Record<string, unknown> | undefined): Pars
     cooldownMs: typeof options.cooldownMs === "number" ? options.cooldownMs : DEFAULT_COOLDOWN_MS,
     quotaCooldownMs:
       typeof options.quotaCooldownMs === "number" ? options.quotaCooldownMs : DEFAULT_QUOTA_COOLDOWN_MS,
-    statsPath: typeof options.statsPath === "string" ? options.statsPath : undefined,
+    statsDir: typeof options.statsDir === "string" ? options.statsDir : undefined,
     logPath: typeof options.logPath === "string" ? options.logPath : undefined,
     logDir: typeof options.logDir === "string" ? options.logDir : undefined,
+    planStats: parsePlanStats(options.planStats),
   }
+}
+
+/**
+ * 解析可选 `planStats` 配置(多账号形态:显示名 → 独立 arkcli HOME 目录映射)。
+ * 过滤 key/value 非空字符串的项;支持 `~` 前缀展开(homedir);结果为空映射时视为未配置(返回 undefined)。
+ */
+function parsePlanStats(raw: unknown): { accounts: Record<string, string> } | undefined {
+  if (!raw || typeof raw !== "object") return undefined
+  const accounts = (raw as { accounts?: unknown }).accounts
+  if (!accounts || typeof accounts !== "object" || Array.isArray(accounts)) return undefined
+  const out: Record<string, string> = {}
+  for (const [name, home] of Object.entries(accounts as Record<string, unknown>)) {
+    if (typeof name !== "string" || name.length === 0) continue
+    if (typeof home !== "string" || home.length === 0) continue
+    out[name] = expandHome(home)
+  }
+  if (Object.keys(out).length === 0) return undefined
+  return { accounts: out }
+}
+
+/** 展开 `~` 前缀为用户 home 目录 */
+function expandHome(p: string): string {
+  if (p === "~") return homedir()
+  if (p.startsWith("~/")) return join(homedir(), p.slice(2))
+  return p
 }
 
 /**

@@ -1,3 +1,5 @@
+## MODIFIED Requirements
+
 ### Requirement: 按天累计请求数与 token
 
 插件 SHALL 通过 `event` hook 监听 `message.updated` 事件，按天、按 provider 累计请求数与 token 消耗。统计 SHALL 在内存对象上累积，定时器每 60 秒将增量追加刷盘一次；进程退出时 SHALL 兜底刷盘。
@@ -41,21 +43,6 @@ token 归因到实际服务的 provider（而非 opencode 配置的 provider）�
 
 - **WHEN** 进程收到 `beforeExit` / `SIGINT` / `SIGTERM`
 - **THEN** 插件 SHALL 最后刷盘一次，避免丢失最近统计
-
-### Requirement: 零 token 事件跳过
-
-插件 SHALL 跳过所有 token 值（input、output、reasoning、cacheRead、cacheWrite）均为零的 `message.updated` 事件。这些事件来自 opencode 创建 assistant 消息时的初始 `updateMessage` 调用，非真实 LLM 用量报告，SHALL NOT 累加到统计中。
-
-#### Scenario: 全零 token 事件跳过
-
-- **WHEN** `message.updated` 事件的 `info.tokens` 所有字段（input、output、reasoning、cache.read、cache.write）均为 0
-- **THEN** 插件 SHALL 跳过该事件，不累加 req，不累加 token
-- **AND** SHALL NOT 更新 lastTokens 快照
-
-#### Scenario: 全零后跟真实 token 正常累加
-
-- **WHEN** 同一 `info.id` 先到达全零 token 事件（被跳过），再到达非零 token 事件
-- **THEN** 插件 SHALL 正常累加非零事件（lastTokens 无记录，视为新 step）
 
 ### Requirement: 内存累积与定时刷盘
 
@@ -124,6 +111,17 @@ token 归因到实际服务的 provider（而非 opencode 配置的 provider）�
 - **WHEN** 统计目录不存在或为空
 - **THEN** 工具 SHALL 返回提示"暂无统计数据"
 
+### Requirement: 历史数据不回溯
+
+本 change 不提供历史统计数据迁移能力。旧的单文件 `round-robin-stats.json` SHALL NOT 被读取或迁移；历史数据已因多进程并发覆盖而不完整，由用户自行决定是否备份旧文件。
+
+#### Scenario: 旧单文件 JSON 不被读取
+
+- **WHEN** 插件启动时存在旧的单文件 `round-robin-stats.json`
+- **THEN** 插件 SHALL NOT 读取该文件，SHALL 从空的增量记录开始统计
+
+## ADDED Requirements
+
 ### Requirement: 聚合读取
 
 插件 SHALL 提供按日期聚合 JSONL 增量记录为 `StatsStore`（day → provider → 累计值）的能力，供图表工具使用。聚合 SHALL 对同一 `(day, provider)` 的所有增量记录逐字段求和。读取时遇到无法解析的行 SHALL 跳过，SHALL NOT 中断聚合。
@@ -137,37 +135,3 @@ token 归因到实际服务的 provider（而非 opencode 配置的 provider）�
 
 - **WHEN** JSONL 文件中存在无法解析为 JSON 的行
 - **THEN** 聚合 SHALL 跳过该行，其余记录 SHALL 正常聚合
-
-### Requirement: 历史数据不回溯
-
-本 change 不提供历史统计数据迁移能力。旧的单文件 `round-robin-stats.json` SHALL NOT 被读取或迁移；历史数据已因多进程并发覆盖而不完整，由用户自行决定是否备份旧文件。
-
-#### Scenario: 旧单文件 JSON 不被读取
-
-- **WHEN** 插件启动时存在旧的单文件 `round-robin-stats.json`
-- **THEN** 插件 SHALL NOT 读取该文件，SHALL 从空的增量记录开始统计
-
-### Requirement: Provider-session 关联
-
-插件 SHALL 在 fetch-patch 层读取 opencode 注入的 `X-Session-Id` HTTP 请求头，将其与随机选中的 provider 建立关联映射（sessionID -> provider account）。该映射供 event 层的 token 归因使用。SHALL 在读取后从请求头中删除 `X-Session-Id`，不将其发送给 API provider。
-
-#### Scenario: 正常请求建立关联
-
-- **WHEN** fetch-patch 拦截到一个 URL 匹配已配置 baseURL 的请求，且请求头含 `X-Session-Id`
-- **THEN** 插件 SHALL 将该 sessionID 与随机选中的 provider account 建立关联
-- **AND** SHALL 从请求头中删除 `X-Session-Id`
-
-#### Scenario: 请求头无 X-Session-Id
-
-- **WHEN** fetch-patch 拦截到一个请求，但请求头不含 `X-Session-Id`
-- **THEN** 插件 SHALL NOT 建立关联，继续正常替换 URL 和 Authorization
-
-#### Scenario: passthrough 不建立关联
-
-- **WHEN** 全部 provider 熔断，fetch-patch passthrough 原始请求
-- **THEN** 插件 SHALL NOT 建立关联（后续 event 层 fallback 到 `info.providerID`）
-
-#### Scenario: 关联映射在消息完成后清理
-
-- **WHEN** `message.updated` 事件的 `info.finish` 为终态值（如 `stop`、`error`）
-- **THEN** 插件 SHALL 清理该 sessionID 的关联映射条目，避免内存增长

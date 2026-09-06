@@ -12334,10 +12334,12 @@ function tool(input) {
 }
 tool.schema = exports_external;
 // src/index.ts
-import { homedir } from "node:os";
-import { join as join2 } from "node:path";
+import { homedir as homedir2 } from "node:os";
+import { join as join4 } from "node:path";
 
 // src/config.ts
+import { homedir } from "node:os";
+import { join } from "node:path";
 var DEFAULT_COOLDOWN_MS = 60000;
 var DEFAULT_QUOTA_COOLDOWN_MS = 3600000;
 function parseOptions(options) {
@@ -12359,10 +12361,36 @@ function parseOptions(options) {
     providers,
     cooldownMs: typeof options.cooldownMs === "number" ? options.cooldownMs : DEFAULT_COOLDOWN_MS,
     quotaCooldownMs: typeof options.quotaCooldownMs === "number" ? options.quotaCooldownMs : DEFAULT_QUOTA_COOLDOWN_MS,
-    statsPath: typeof options.statsPath === "string" ? options.statsPath : undefined,
+    statsDir: typeof options.statsDir === "string" ? options.statsDir : undefined,
     logPath: typeof options.logPath === "string" ? options.logPath : undefined,
-    logDir: typeof options.logDir === "string" ? options.logDir : undefined
+    logDir: typeof options.logDir === "string" ? options.logDir : undefined,
+    planStats: parsePlanStats(options.planStats)
   };
+}
+function parsePlanStats(raw) {
+  if (!raw || typeof raw !== "object")
+    return;
+  const accounts = raw.accounts;
+  if (!accounts || typeof accounts !== "object" || Array.isArray(accounts))
+    return;
+  const out = {};
+  for (const [name, home] of Object.entries(accounts)) {
+    if (typeof name !== "string" || name.length === 0)
+      continue;
+    if (typeof home !== "string" || home.length === 0)
+      continue;
+    out[name] = expandHome(home);
+  }
+  if (Object.keys(out).length === 0)
+    return;
+  return { accounts: out };
+}
+function expandHome(p) {
+  if (p === "~")
+    return homedir();
+  if (p.startsWith("~/"))
+    return join(homedir(), p.slice(2));
+  return p;
 }
 function collectProviders(config2, providers) {
   const providerMap = config2.provider;
@@ -12538,21 +12566,22 @@ async function classify429(response) {
 }
 
 // src/stats.ts
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { join as join2 } from "node:path";
 var TERMINAL_FINISH = new Set(["stop", "error", "unknown"]);
 var DEFAULT_FLUSH_MS = 60000;
 
 class StatsCollector {
   store = {};
-  path;
+  pending = {};
+  dir;
   flushMs;
   timer;
   lastTokens = new Map;
-  constructor(path, opts = {}) {
-    this.path = path;
+  constructor(dir, opts = {}) {
+    this.dir = dir;
     this.flushMs = opts.flushMs ?? DEFAULT_FLUSH_MS;
-    this.load();
+    mkdirSync(this.dir, { recursive: true });
     if (opts.registerExitHooks !== false) {
       this.timer = setInterval(() => this.flush(), this.flushMs);
       process.on("beforeExit", this.onBeforeExit);
@@ -12582,41 +12611,34 @@ class StatsCollector {
     if (!info.tokens)
       return;
     const day = todayLocal();
-    const dayData = this.store[day] ?? {};
-    const s = dayData[provider] ?? newProviderStats();
-    s.req++;
-    s.in += num(info.tokens.input);
-    s.out += num(info.tokens.output);
-    s.reasoning += num(info.tokens.reasoning);
-    s.cacheRead += num(info.tokens.cache.read);
-    s.cacheWrite += num(info.tokens.cache.write);
-    if (typeof info.cost === "number")
-      s.cost += info.cost;
-    dayData[provider] = s;
-    this.store[day] = dayData;
+    addTo(this.store, day, provider, info.tokens, info.cost);
+    addTo(this.pending, day, provider, info.tokens, info.cost);
   }
   getStore() {
     return this.store;
   }
   flush() {
-    mkdirSync(dirname(this.path), { recursive: true });
-    writeFileSync(this.path, JSON.stringify(this.store, null, 2));
-  }
-  load() {
-    if (!existsSync(this.path)) {
-      this.store = {};
+    if (isEmpty(this.pending))
       return;
-    }
-    try {
-      const parsed = JSON.parse(readFileSync(this.path, "utf8"));
-      if (!isCompatibleFormat(parsed)) {
-        this.store = {};
-        return;
+    for (const [day, providers] of Object.entries(this.pending)) {
+      const file2 = join2(this.dir, `${day}.jsonl`);
+      for (const [provider, s] of Object.entries(providers)) {
+        const rec = {
+          day,
+          provider,
+          req: s.req,
+          in: s.in,
+          out: s.out,
+          reasoning: s.reasoning,
+          cacheRead: s.cacheRead,
+          cacheWrite: s.cacheWrite,
+          cost: s.cost
+        };
+        appendFileSync(file2, JSON.stringify(rec) + `
+`);
       }
-      this.store = parsed;
-    } catch {
-      this.store = {};
     }
+    this.pending = {};
   }
   stop() {
     if (this.timer)
@@ -12636,18 +12658,6 @@ function sameSnapshot(a, b) {
 function isAllZero(s) {
   return s.input === 0 && s.output === 0 && s.reasoning === 0 && s.cacheRead === 0 && s.cacheWrite === 0;
 }
-function isCompatibleFormat(data) {
-  if (typeof data !== "object" || data === null)
-    return false;
-  for (const v of Object.values(data)) {
-    if (typeof v !== "object" || v === null)
-      return false;
-    if ("req" in v && typeof v.req === "number")
-      return false;
-    break;
-  }
-  return true;
-}
 function num(v) {
   return typeof v === "number" && !Number.isNaN(v) ? v : 0;
 }
@@ -12657,6 +12667,63 @@ function todayLocal() {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+function addTo(store, day, provider, tokens, cost) {
+  const dayData = store[day] ?? {};
+  const s = dayData[provider] ?? newProviderStats();
+  s.req++;
+  s.in += num(tokens.input);
+  s.out += num(tokens.output);
+  s.reasoning += num(tokens.reasoning);
+  s.cacheRead += num(tokens.cache.read);
+  s.cacheWrite += num(tokens.cache.write);
+  if (typeof cost === "number")
+    s.cost += cost;
+  dayData[provider] = s;
+  store[day] = dayData;
+}
+function isEmpty(store) {
+  return Object.keys(store).length === 0;
+}
+function dayOffset(n) {
+  const d = new Date;
+  d.setDate(d.getDate() - n);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+function aggregateStats(dir, days) {
+  const out = {};
+  for (let i = days - 1;i >= 0; i--) {
+    const file2 = join2(dir, `${dayOffset(i)}.jsonl`);
+    if (!existsSync(file2))
+      continue;
+    const lines = readFileSync(file2, "utf8").split(`
+`);
+    for (const line of lines) {
+      if (!line.trim())
+        continue;
+      let rec;
+      try {
+        rec = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      const s = (out[rec.day] ?? {})[rec.provider] ?? newProviderStats();
+      s.req += num(rec.req);
+      s.in += num(rec.in);
+      s.out += num(rec.out);
+      s.reasoning += num(rec.reasoning);
+      s.cacheRead += num(rec.cacheRead);
+      s.cacheWrite += num(rec.cacheWrite);
+      s.cost += num(rec.cost);
+      const dayData = out[rec.day] ?? {};
+      dayData[rec.provider] = s;
+      out[rec.day] = dayData;
+    }
+  }
+  return out;
 }
 
 // src/chart.ts
@@ -12731,9 +12798,174 @@ function pad(s, width) {
   return s.padEnd(width);
 }
 
+// src/quota.ts
+import { spawn } from "node:child_process";
+var DEFAULT_TIMEOUT_MS = 30000;
+var CALLER_ENV = {
+  ARKCLI_CALLER_TYPE: "ai_agent",
+  ARKCLI_CALLER_NAME: "opencode",
+  ARKCLI_SKILL_NAME: "arkcli-usage"
+};
+var COL_W = 16;
+var defaultSpawn = (cmd, args, opts) => {
+  return new Promise((resolve) => {
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    const child = spawn(cmd, args, { env: { ...process.env, ...opts?.env ?? {} } });
+    child.stdout.on("data", (d) => stdout += d.toString());
+    child.stderr.on("data", (d) => stderr += d.toString());
+    const timer = opts?.timeoutMs ? setTimeout(() => child.kill(), opts.timeoutMs) : undefined;
+    child.on("error", (err) => {
+      if (settled)
+        return;
+      settled = true;
+      if (timer)
+        clearTimeout(timer);
+      resolve({ stdout, stderr: stderr || err.message, exitCode: null });
+    });
+    child.on("close", (code) => {
+      if (settled)
+        return;
+      settled = true;
+      if (timer)
+        clearTimeout(timer);
+      resolve({ stdout, stderr, exitCode: code });
+    });
+  });
+};
+var volcArkcliAdapter = {
+  id: "volc-arkcli",
+  supports: () => true,
+  fetch: async (account, home, exec) => {
+    const res = await exec("arkcli", ["usage", "plan", "--product", "coding-plan", "--format", "json"], { env: { ...CALLER_ENV, HOME: home }, timeoutMs: DEFAULT_TIMEOUT_MS });
+    if (res.exitCode === null) {
+      return errQuota(account, `arkcli 不可用: ${res.stderr.trim() || "无法启动 arkcli"}`);
+    }
+    if (res.exitCode !== 0) {
+      return errQuota(account, classifyError(`${res.stdout}
+${res.stderr}`));
+    }
+    return parseUsagePlan(account, res.stdout);
+  }
+};
+var adapters = [volcArkcliAdapter];
+async function collectPlanQuotas(accounts, exec, registry2 = adapters) {
+  const results = await Promise.all(Object.entries(accounts).map(async ([account, home]) => {
+    const adapter = registry2.find((a) => a.supports(account));
+    if (!adapter) {
+      return { provider: account, kind: "unknown", subscribed: false, periods: [], error: "不支持的 provider" };
+    }
+    try {
+      return await adapter.fetch(account, home, exec);
+    } catch (e) {
+      return { provider: account, kind: "unknown", subscribed: false, periods: [], error: errMsg(e) };
+    }
+  }));
+  return results;
+}
+function renderPlanChart(quotas) {
+  if (quotas.filter((q) => q.periods.length > 0).length === 0) {
+    return "暂无统计数据";
+  }
+  const col = (s) => s.padEnd(COL_W);
+  const lines = [];
+  lines.push("coding-plan 官方配额 (plan_stats)");
+  lines.push(`${col("profile")}  ${col("session")}  ${col("weekly")}  ${col("monthly")}`);
+  for (const q of quotas) {
+    if (q.error) {
+      lines.push(`${col(pad(q.provider, COL_W))}  ⚠ ${q.error}`);
+      continue;
+    }
+    const by = periodByLabel(q.periods);
+    lines.push(`${col(pad(q.provider, COL_W))}  ${col(cell(by.session))}  ${col(cell(by.weekly))}  ${col(cell(by.monthly))}`);
+    const resets = [resetCell(by.session), resetCell(by.weekly), resetCell(by.monthly)];
+    if (resets.some((r) => r)) {
+      lines.push(`${col("")}  ${col(resets[0])}  ${col(resets[1])}  ${col(resets[2])}`);
+    }
+    if (!q.subscribed) {
+      lines.push(`${col("")}  (未订阅/无套餐)`);
+    }
+  }
+  return lines.join(`
+`);
+}
+function parseUsagePlan(profile, stdout) {
+  let parsed;
+  try {
+    parsed = JSON.parse(stdout);
+  } catch {
+    return errQuota(profile, "arkcli 输出解析失败(期望 JSON)");
+  }
+  const item = (parsed.items ?? []).find((i) => i.product === "coding-plan");
+  if (!item) {
+    return errQuota(profile, "usage plan 未返回 coding-plan 桶");
+  }
+  if (item.error) {
+    return errQuota(profile, item.error);
+  }
+  const periods = (item.periods ?? []).filter((p) => typeof p?.label === "string" && p.label.length > 0).map((p) => ({
+    label: p.label,
+    percent: num2(p.percent),
+    resetAt: typeof p.reset_at === "string" && p.reset_at.length > 0 ? p.reset_at : undefined
+  }));
+  return {
+    provider: profile,
+    kind: "coding-plan",
+    subscribed: item.subscribed === true,
+    periods,
+    updatedAt: item.updated_at != null ? String(item.updated_at) : undefined
+  };
+}
+function classifyError(text) {
+  const t = text.toLowerCase();
+  if (t.includes("sso") || t.includes("not logged") || t.includes("login")) {
+    return "未登录(需 arkcli auth login volc-sso)";
+  }
+  if (t.includes("profile") && t.includes("not found")) {
+    return "arkcli profile 不存在";
+  }
+  const firstLine = text.split(`
+`).map((l) => l.trim()).find((l) => l.length > 0);
+  return firstLine ? firstLine.slice(0, 120) : "arkcli 查询失败";
+}
+function errQuota(profile, error45) {
+  return { provider: profile, kind: "coding-plan", subscribed: false, periods: [], error: error45 };
+}
+function periodByLabel(periods) {
+  const m = {};
+  for (const p of periods)
+    m[p.label] = p;
+  return m;
+}
+function cell(p) {
+  if (!p)
+    return "—";
+  return `${bar(p.percent, 100, 8)} ${String(p.percent).padStart(3)}%`;
+}
+function resetCell(p) {
+  return p?.resetAt ? `重置 ${shortDate(p.resetAt)}` : "";
+}
+function shortDate(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime()))
+    return iso.slice(0, 10);
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mi = String(d.getMinutes()).padStart(2, "0");
+  return `${mm}-${dd} ${hh}:${mi}`;
+}
+function num2(v) {
+  return typeof v === "number" && !Number.isNaN(v) ? v : 0;
+}
+function errMsg(e) {
+  return e instanceof Error ? e.message : String(e);
+}
+
 // src/logger.ts
-import { appendFileSync, mkdirSync as mkdirSync2 } from "node:fs";
-import { dirname as dirname2, join } from "node:path";
+import { appendFileSync as appendFileSync2, mkdirSync as mkdirSync2 } from "node:fs";
+import { dirname, join as join3 } from "node:path";
 
 class Logger {
   mode;
@@ -12749,7 +12981,7 @@ class Logger {
       this.mode = "simple";
       this.dir = "";
       this.fixedPath = logDirOrPath;
-      mkdirSync2(dirname2(this.fixedPath), { recursive: true });
+      mkdirSync2(dirname(this.fixedPath), { recursive: true });
     }
   }
   logFetch(accountName, keyIndex, keyTail, status, durationMs) {
@@ -12793,9 +13025,9 @@ class Logger {
   write(line) {
     if (this.mode === "rotation") {
       const day = todayLocal2();
-      appendFileSync(join(this.dir, `round-robin-${day}.log`), line);
+      appendFileSync2(join3(this.dir, `round-robin-${day}.log`), line);
     } else {
-      appendFileSync(this.fixedPath, line);
+      appendFileSync2(this.fixedPath, line);
     }
   }
 }
@@ -12823,6 +13055,7 @@ function todayLocal2() {
 // src/index.ts
 var DEFAULT_CHART_DAYS = 7;
 var globalStats = null;
+var globalStatsDir = null;
 var globalLogger = null;
 var globalPool = null;
 var fetchPatched = false;
@@ -12830,8 +13063,9 @@ var corrMap = new Map;
 var server = async (_input, options) => {
   const opts = parseOptions(options);
   if (!globalStats) {
-    const statsPath = opts.statsPath ?? defaultPath("round-robin-stats.json");
-    globalStats = new StatsCollector(statsPath);
+    const statsDir = opts.statsDir ?? defaultPath("round-robin-stats");
+    globalStatsDir = statsDir;
+    globalStats = new StatsCollector(statsDir);
     if (opts.logPath) {
       globalLogger = new Logger(opts.logPath);
     } else {
@@ -12890,7 +13124,21 @@ var server = async (_input, options) => {
         args: { days: tool.schema.number().optional() },
         execute: async (args) => {
           const days = typeof args.days === "number" ? args.days : DEFAULT_CHART_DAYS;
-          return renderChart(globalStats.getStore(), days);
+          globalStats.flush();
+          const store = aggregateStats(globalStatsDir, days);
+          return renderChart(store, days);
+        }
+      }),
+      plan_stats: tool({
+        description: "查看各 Coding Plan(账号)的官方配额用量(percent + 重置时间)。需在插件 options 配置 planStats.accounts(显示名 → 隔离 arkcli HOME),且每个账号已在该 HOME 下 SSO 登录",
+        args: {},
+        execute: async () => {
+          const accounts = opts.planStats?.accounts;
+          if (!accounts || Object.keys(accounts).length === 0) {
+            return '未配置 planStats.accounts。请在插件 options 添加,例如 {"planStats":{"accounts":{"账号A":"~/.arkcli-accounts/a"}}}';
+          }
+          const quotas = await collectPlanQuotas(accounts, defaultSpawn);
+          return renderPlanChart(quotas);
         }
       })
     }
@@ -12903,12 +13151,12 @@ var pluginModule = {
 var src_default = pluginModule;
 function defaultPath(filename) {
   const xdg = process.env.XDG_DATA_HOME;
-  const base = xdg ? join2(xdg, "opencode") : join2(homedir(), ".local", "share", "opencode");
-  return join2(base, filename);
+  const base = xdg ? join4(xdg, "opencode") : join4(homedir2(), ".local", "share", "opencode");
+  return join4(base, filename);
 }
 function defaultDir() {
   const xdg = process.env.XDG_DATA_HOME;
-  return xdg ? join2(xdg, "opencode") : join2(homedir(), ".local", "share", "opencode");
+  return xdg ? join4(xdg, "opencode") : join4(homedir2(), ".local", "share", "opencode");
 }
 export {
   src_default as default

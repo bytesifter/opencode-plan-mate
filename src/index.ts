@@ -4,8 +4,9 @@ import { join } from "node:path"
 import { parseOptions, collectProviders } from "./config"
 import { ProviderPool } from "./pool"
 import { patchFetch } from "./fetch-patch"
-import { StatsCollector, type UsageInput } from "./stats"
+import { StatsCollector, aggregateStats, type UsageInput } from "./stats"
 import { renderChart } from "./chart"
+import { collectPlanQuotas, defaultSpawn, renderPlanChart } from "./quota"
 import { Logger, tail, type UsageTokens } from "./logger"
 import type { EventContext } from "./types"
 
@@ -13,6 +14,7 @@ import type { EventContext } from "./types"
 const DEFAULT_CHART_DAYS = 7
 
 let globalStats: StatsCollector | null = null
+let globalStatsDir: string | null = null
 let globalLogger: Logger | null = null
 let globalPool: ProviderPool | null = null
 let fetchPatched = false
@@ -28,8 +30,9 @@ const server: Plugin = async (_input, options) => {
   const opts = parseOptions(options as Record<string, unknown> | undefined)
 
   if (!globalStats) {
-    const statsPath = opts.statsPath ?? defaultPath("round-robin-stats.json")
-    globalStats = new StatsCollector(statsPath)
+    const statsDir = opts.statsDir ?? defaultPath("round-robin-stats")
+    globalStatsDir = statsDir
+    globalStats = new StatsCollector(statsDir)
     if (opts.logPath) {
       globalLogger = new Logger(opts.logPath)
     } else {
@@ -105,7 +108,22 @@ const server: Plugin = async (_input, options) => {
         args: { days: tool.schema.number().optional() },
         execute: async (args) => {
           const days = typeof args.days === "number" ? args.days : DEFAULT_CHART_DAYS
-          return renderChart(globalStats!.getStore(), days)
+          globalStats!.flush()
+          const store = aggregateStats(globalStatsDir!, days)
+          return renderChart(store, days)
+        },
+      }),
+      plan_stats: tool({
+        description:
+          "查看各 Coding Plan(账号)的官方配额用量(percent + 重置时间)。需在插件 options 配置 planStats.accounts(显示名 → 隔离 arkcli HOME),且每个账号已在该 HOME 下 SSO 登录",
+        args: {},
+        execute: async () => {
+          const accounts = opts.planStats?.accounts
+          if (!accounts || Object.keys(accounts).length === 0) {
+            return '未配置 planStats.accounts。请在插件 options 添加,例如 {"planStats":{"accounts":{"账号A":"~/.arkcli-accounts/a"}}}'
+          }
+          const quotas = await collectPlanQuotas(accounts, defaultSpawn)
+          return renderPlanChart(quotas)
         },
       }),
     },

@@ -1,6 +1,6 @@
-import type { StatsStore, ProviderStats } from "./types"
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs"
-import { dirname } from "node:path"
+import type { StatsStore, ProviderStats, StatsRecord } from "./types"
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs"
+import { join } from "node:path"
 
 /**
  * Usage 输入:从 AssistantMessage 提取的字段(与 @opencode-ai/sdk 解耦,便于测试)。
@@ -34,27 +34,29 @@ const TERMINAL_FINISH = new Set(["stop", "error", "unknown"])
 const DEFAULT_FLUSH_MS = 60000
 
 /**
- * 用量统计收集器:内存累积 + 定时刷盘到 JSON。
+ * 用量统计收集器:内存累积 + 定时追加刷盘到按日 JSONL。
  *
- * 设计要点(见 design 决策 2):
+ * 设计要点:
  * - 通过 event hook 的 message.updated 拿 usage,不解析 SSE 流
  * - token 快照变化检测:不同 token = 新 step,累加;相同 = re-emission,跳过
- * - 内存累积,60s 定时刷盘,崩溃最多丢 1 分钟统计
+ * - 内存累积,60s 定时把自上次刷盘以来的增量(追加式)写入当天 JSONL,崩溃最多丢 1 分钟统计
+ * - 追加式写入(O_APPEND + 单次 write)天然原子,多进程并发不互相覆盖
  */
 export class StatsCollector {
   private store: StatsStore = {}
-  private readonly path: string
+  private pending: StatsStore = {}
+  private readonly dir: string
   private readonly flushMs: number
   private timer?: ReturnType<typeof setInterval>
   private lastTokens: Map<string, TokenSnapshot> = new Map()
 
   constructor(
-    path: string,
+    dir: string,
     opts: { flushMs?: number; registerExitHooks?: boolean } = {},
   ) {
-    this.path = path
+    this.dir = dir
     this.flushMs = opts.flushMs ?? DEFAULT_FLUSH_MS
-    this.load()
+    mkdirSync(this.dir, { recursive: true })
     if (opts.registerExitHooks !== false) {
       this.timer = setInterval(() => this.flush(), this.flushMs)
       process.on("beforeExit", this.onBeforeExit)
@@ -93,17 +95,8 @@ export class StatsCollector {
   private commitToStore(info: UsageInput, provider: string): void {
     if (!info.tokens) return
     const day = todayLocal()
-    const dayData = this.store[day] ?? {}
-    const s = dayData[provider] ?? newProviderStats()
-    s.req++
-    s.in += num(info.tokens.input)
-    s.out += num(info.tokens.output)
-    s.reasoning += num(info.tokens.reasoning)
-    s.cacheRead += num(info.tokens.cache.read)
-    s.cacheWrite += num(info.tokens.cache.write)
-    if (typeof info.cost === "number") s.cost += info.cost
-    dayData[provider] = s
-    this.store[day] = dayData
+    addTo(this.store, day, provider, info.tokens, info.cost)
+    addTo(this.pending, day, provider, info.tokens, info.cost)
   }
 
   /** 读取内存 store(图表工具用) */
@@ -111,28 +104,27 @@ export class StatsCollector {
     return this.store
   }
 
-  /** 立即刷盘到 JSON 文件 */
+  /** 立即把自上次刷盘以来的增量追加写入当天 JSONL 文件 */
   flush(): void {
-    mkdirSync(dirname(this.path), { recursive: true })
-    writeFileSync(this.path, JSON.stringify(this.store, null, 2))
-  }
-
-  /** 从 JSON 加载(文件不存在/损坏/旧格式则置空) */
-  load(): void {
-    if (!existsSync(this.path)) {
-      this.store = {}
-      return
-    }
-    try {
-      const parsed = JSON.parse(readFileSync(this.path, "utf8"))
-      if (!isCompatibleFormat(parsed)) {
-        this.store = {}
-        return
+    if (isEmpty(this.pending)) return
+    for (const [day, providers] of Object.entries(this.pending)) {
+      const file = join(this.dir, `${day}.jsonl`)
+      for (const [provider, s] of Object.entries(providers)) {
+        const rec: StatsRecord = {
+          day,
+          provider,
+          req: s.req,
+          in: s.in,
+          out: s.out,
+          reasoning: s.reasoning,
+          cacheRead: s.cacheRead,
+          cacheWrite: s.cacheWrite,
+          cost: s.cost,
+        }
+        appendFileSync(file, JSON.stringify(rec) + "\n")
       }
-      this.store = parsed as StatsStore
-    } catch {
-      this.store = {}
     }
+    this.pending = {}
   }
 
   /** 停止定时器并刷盘(测试与卸载用) */
@@ -166,20 +158,6 @@ function isAllZero(s: TokenSnapshot): boolean {
   return s.input === 0 && s.output === 0 && s.reasoning === 0 && s.cacheRead === 0 && s.cacheWrite === 0
 }
 
-/**
- * 检测 JSON 是否为新格式(date -> provider -> stats)。
- * 旧格式:date -> DayStats(直接含 req 字段)。
- */
-function isCompatibleFormat(data: unknown): boolean {
-  if (typeof data !== "object" || data === null) return false
-  for (const v of Object.values(data as Record<string, unknown>)) {
-    if (typeof v !== "object" || v === null) return false
-    if ("req" in v && typeof (v as { req: unknown }).req === "number") return false
-    break
-  }
-  return true
-}
-
 /** 容错数值转换:非数字归零 */
 function num(v: unknown): number {
   return typeof v === "number" && !Number.isNaN(v) ? v : 0
@@ -192,4 +170,78 @@ export function todayLocal(): string {
   const m = String(d.getMonth() + 1).padStart(2, "0")
   const day = String(d.getDate()).padStart(2, "0")
   return `${y}-${m}-${day}`
+}
+
+/** 向 store 的 (day, provider) 累加一次用量增量 */
+function addTo(
+  store: StatsStore,
+  day: string,
+  provider: string,
+  tokens: { input: number; output: number; reasoning: number; cache: { read: number; write: number } },
+  cost: number | undefined,
+): void {
+  const dayData = store[day] ?? {}
+  const s = dayData[provider] ?? newProviderStats()
+  s.req++
+  s.in += num(tokens.input)
+  s.out += num(tokens.output)
+  s.reasoning += num(tokens.reasoning)
+  s.cacheRead += num(tokens.cache.read)
+  s.cacheWrite += num(tokens.cache.write)
+  if (typeof cost === "number") s.cost += cost
+  dayData[provider] = s
+  store[day] = dayData
+}
+
+/** 判断 store 是否没有任何记录 */
+function isEmpty(store: StatsStore): boolean {
+  return Object.keys(store).length === 0
+}
+
+/** 本地日期往前 n 天(YYYY-MM-DD) */
+function dayOffset(n: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() - n)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, "0")
+  const day = String(d.getDate()).padStart(2, "0")
+  return `${y}-${m}-${day}`
+}
+
+/**
+ * 聚合 statsDir 下最近 N 天的 JSONL 增量记录为 StatsStore。
+ * 同一 (day, provider) 的所有增量逐字段求和;无法解析的行跳过,不中断聚合。
+ *
+ * @param dir - 统计目录
+ * @param days - 聚合最近多少天
+ * @returns 聚合后的统计(与现有 StatsStore 同构)
+ */
+export function aggregateStats(dir: string, days: number): StatsStore {
+  const out: StatsStore = {}
+  for (let i = days - 1; i >= 0; i--) {
+    const file = join(dir, `${dayOffset(i)}.jsonl`)
+    if (!existsSync(file)) continue
+    const lines = readFileSync(file, "utf8").split("\n")
+    for (const line of lines) {
+      if (!line.trim()) continue
+      let rec: StatsRecord
+      try {
+        rec = JSON.parse(line) as StatsRecord
+      } catch {
+        continue
+      }
+      const s = (out[rec.day] ?? {})[rec.provider] ?? newProviderStats()
+      s.req += num(rec.req)
+      s.in += num(rec.in)
+      s.out += num(rec.out)
+      s.reasoning += num(rec.reasoning)
+      s.cacheRead += num(rec.cacheRead)
+      s.cacheWrite += num(rec.cacheWrite)
+      s.cost += num(rec.cost)
+      const dayData = out[rec.day] ?? {}
+      dayData[rec.provider] = s
+      out[rec.day] = dayData
+    }
+  }
+  return out
 }
