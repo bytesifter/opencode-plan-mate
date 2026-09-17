@@ -8,17 +8,25 @@
 ## 安装
 
 ```bash
-git clone https://github.com/bytesifter/opencode-round-robin.git
-cd opencode-round-robin
+git clone https://github.com/bytesifter/opencode-plan-mate.git
+cd opencode-plan-mate
 bun install
 bun run build
 ```
 
-在 `~/.config/opencode/opencode.jsonc` 的 `plugin` 数组中用 `file:///` 指向 clone 路径：
+在 `~/.config/opencode/opencode.jsonc`（Windows 为 `%USERPROFILE%\.config\opencode\opencode.jsonc`）的 `plugin` 数组中用 `file:///` 指向 clone 路径：
 
 ```jsonc
 "plugin": [
-  ["file:///path/to/opencode-round-robin", { "providers": ["account-a", "account-b", "account-c"] }]
+  ["file:///path/to/opencode-plan-mate", { "providers": ["account-a", "account-b", "account-c"] }]
+]
+```
+
+Windows 下路径用盘符写法（`file:///` 后接 `D:/...`，斜杠而非反斜杠）：
+
+```jsonc
+"plugin": [
+  ["file:///D:/code/opencode-plan-mate", { "providers": ["account-a", "account-b", "account-c"] }]
 ]
 ```
 
@@ -36,12 +44,14 @@ bun run build
 | `logPath` | `string` | 否 | - | 日志文件路径（强制单文件模式，禁用轮转） |
 | `planStats` | `object` | 否 | - | 套餐配额统计配置：`accounts`（显示名 → 独立 arkcli HOME 目录），见 [套餐配额统计](../user-guide/plan-stats.md) |
 
-默认产物路径（`~/.local/share/opencode/`）：
+`logDir` / `statsDir` 可指向**已存在**的目录：插件以幂等方式准备目录，既存目录不会导致加载失败（Windows 下尤其重要，见下方说明）。
 
-- 统计：`~/.local/share/opencode/round-robin-stats/YYYY-MM-DD.jsonl`（按日文件，追加式增量记录）
-- 日志：`~/.local/share/opencode/round-robin-YYYY-MM-DD.log`（按日轮转）
+默认产物路径（`~/.local/share/opencode/`，Windows 为 `%USERPROFILE%\.local\share\opencode\`）：
 
-统计为**追加式按日 JSONL**：每个进程每 60 秒把自上次刷盘以来的增量追加写入当天文件，追加原子、多进程并发不覆盖。`roundrobin_stats` 工具聚合磁盘上所有进程的记录，跨进程数据完整可见。崩溃最多丢 1 分钟增量。
+- 统计：`~/.local/share/opencode/plan-mate-stats/YYYY-MM-DD.jsonl`（按日文件，追加式增量记录；Windows：`%USERPROFILE%\.local\share\opencode\plan-mate-stats\YYYY-MM-DD.jsonl`）
+- 日志：`~/.local/share/opencode/plan-mate-YYYY-MM-DD.log`（按日轮转；Windows：`%USERPROFILE%\.local\share\opencode\plan-mate-YYYY-MM-DD.log`）
+
+统计为**追加式按日 JSONL**：每个进程每 60 秒把自上次刷盘以来的增量追加写入当天文件，追加原子、多进程并发不覆盖。`plan_mate_stats` 工具聚合磁盘上所有进程的记录，跨进程数据完整可见。崩溃最多丢 1 分钟增量。
 
 日志模式优先级：`logPath > logDir > 默认（轮转）`。配置 `logPath` 时强制单文件模式并忽略 `logDir`；不配 `logPath` 时启用按日轮转，目录为 `logDir` 或默认路径。
 
@@ -83,7 +93,7 @@ bun run build
     }
   },
   "plugin": [
-    ["file:///path/to/opencode-round-robin", {
+    ["file:///path/to/opencode-plan-mate", {
       "providers": ["account-a", "account-b", "account-c"],
       "cooldownMs": 60000,
       "quotaCooldownMs": 3600000

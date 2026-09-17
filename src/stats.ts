@@ -1,6 +1,7 @@
 import type { StatsStore, ProviderStats, StatsRecord } from "./types"
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs"
+import { appendFileSync, existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
+import { ensureDir } from "./fs-util"
 
 /**
  * Usage 输入:从 AssistantMessage 提取的字段(与 @opencode-ai/sdk 解耦,便于测试)。
@@ -56,7 +57,7 @@ export class StatsCollector {
   ) {
     this.dir = dir
     this.flushMs = opts.flushMs ?? DEFAULT_FLUSH_MS
-    mkdirSync(this.dir, { recursive: true })
+    ensureDir(this.dir)
     if (opts.registerExitHooks !== false) {
       this.timer = setInterval(() => this.flush(), this.flushMs)
       process.on("beforeExit", this.onBeforeExit)

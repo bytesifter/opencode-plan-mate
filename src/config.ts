@@ -17,16 +17,16 @@ const DEFAULT_QUOTA_COOLDOWN_MS = 3600000
  */
 export function parseOptions(options: Record<string, unknown> | undefined): ParsedOptions {
   if (!options) {
-    throw new Error("opencode-round-robin: 缺少 options")
+    throw new Error("opencode-plan-mate: 缺少 options")
   }
   const rawProviders = options.providers
   if (!Array.isArray(rawProviders) || rawProviders.length === 0) {
-    throw new Error("opencode-round-robin: options.providers 必填且非空")
+    throw new Error("opencode-plan-mate: options.providers 必填且非空")
   }
   const providers: string[] = []
   for (const p of rawProviders) {
     if (typeof p !== "string" || p.length === 0) {
-      throw new Error("opencode-round-robin: options.providers 元素必须为非空字符串")
+      throw new Error("opencode-plan-mate: options.providers 元素必须为非空字符串")
     }
     providers.push(p)
   }
@@ -60,10 +60,10 @@ function parsePlanStats(raw: unknown): { accounts: Record<string, string> } | un
   return { accounts: out }
 }
 
-/** 展开 `~` 前缀为用户 home 目录 */
+/** 展开 `~` 前缀为用户 home 目录(兼容 `~/` 与 Windows 习惯写法 `~\`) */
 function expandHome(p: string): string {
   if (p === "~") return homedir()
-  if (p.startsWith("~/")) return join(homedir(), p.slice(2))
+  if (p.startsWith("~/") || p.startsWith("~\\")) return join(homedir(), p.slice(2))
   return p
 }
 
@@ -83,22 +83,22 @@ export function collectProviders(
 ): ProviderEntry[] {
   const providerMap = config.provider
   if (!providerMap) {
-    throw new Error("opencode-round-robin: Config.provider 为空")
+    throw new Error("opencode-plan-mate: Config.provider 为空")
   }
   const seen = new Set<string>()
   const entries: ProviderEntry[] = []
   for (const name of providers) {
     const p = providerMap[name]
     if (!p) {
-      throw new Error(`opencode-round-robin: provider "${name}" 不存在于 config.provider`)
+      throw new Error(`opencode-plan-mate: provider "${name}" 不存在于 config.provider`)
     }
     const baseURL = p.options?.baseURL
     const apiKey = p.options?.apiKey
     if (typeof baseURL !== "string" || baseURL.length === 0) {
-      throw new Error(`opencode-round-robin: provider "${name}" 缺少 options.baseURL`)
+      throw new Error(`opencode-plan-mate: provider "${name}" 缺少 options.baseURL`)
     }
     if (typeof apiKey !== "string" || apiKey.length === 0) {
-      throw new Error(`opencode-round-robin: provider "${name}" 缺少 options.apiKey`)
+      throw new Error(`opencode-plan-mate: provider "${name}" 缺少 options.apiKey`)
     }
     if (!seen.has(apiKey)) {
       seen.add(apiKey)

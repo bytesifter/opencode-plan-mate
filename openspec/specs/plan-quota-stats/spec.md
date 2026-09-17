@@ -41,12 +41,17 @@ plan-quota-stats 能力：插件按 arkcli profile（账号）聚合展示各账
 
 ### Requirement: 通过 arkcli 子进程取数（每账号隔离 HOME）
 
-插件 SHALL 通过派生 arkcli 子进程获取官方配额，SHALL NOT 在插件进程内直连 ARK 控制面 HTTP 接口。每个账号 SHALL 以该账号独立的 arkcli HOME 目录作为子进程 `HOME` 环境变量执行 `arkcli usage plan --product coding-plan --format json`（使用该 HOME 内的默认 profile），并对每次调用注入调用归因环境变量（如 `ARKCLI_CALLER_TYPE/NAME/SKILL_NAME`）。
+插件 SHALL 通过派生 arkcli 子进程获取官方配额，SHALL NOT 在插件进程内直连 ARK 控制面 HTTP 接口。每个账号 SHALL 以该账号独立的 arkcli HOME 目录作为子进程 home 环境变量（POSIX 设 `HOME`，Windows 设 `USERPROFILE`）执行 `arkcli usage plan --product coding-plan --format json`（使用该 HOME 内的默认 profile），并对每次调用注入调用归因环境变量（如 `ARKCLI_CALLER_TYPE/NAME/SKILL_NAME`）。派生 SHALL 跨平台可用：Windows 上的 arkcli 常以 `.cmd`/`.bat` 垫片分发，插件 SHALL 通过命令解释器解析并执行该垫片，SHALL NOT 依赖把裸命令名按 `PATHEXT` 直接派生。
 
 #### Scenario: 子进程带隔离 HOME 取数
 
 - **WHEN** 查询某账号的套餐配额，其 HOME 目录为 `~/.arkcli-accounts/<acct>`
-- **THEN** 插件 SHALL 以 `HOME=~/.arkcli-accounts/<acct>` 执行 `arkcli usage plan --product coding-plan --format json` 并解析其 stdout
+- **THEN** 插件 SHALL 以该账号隔离的 home 环境变量（POSIX `HOME` / Windows `USERPROFILE`）执行 `arkcli usage plan --product coding-plan --format json` 并解析其 stdout
+
+#### Scenario: Windows 解析 .cmd 垫片执行
+
+- **WHEN** 在 Windows 上查询某账号的套餐配额，且本机 arkcli 以 `arkcli.cmd`（npm 垫片）形式安装
+- **THEN** 插件 SHALL 通过命令解释器（如 `cmd.exe /c`）执行 arkcli，使该垫片被正确解析
 
 #### Scenario: 归因环境变量注入
 
@@ -55,8 +60,22 @@ plan-quota-stats 能力：插件按 arkcli profile（账号）聚合展示各账
 
 #### Scenario: arkcli 缺失标注
 
-- **WHEN** 本机未安装 arkcli 或命令不可执行
-- **THEN** 对应行 SHALL 标注"arkcli 不可用"类错误，SHALL NOT 阻断其他账号
+- **WHEN** 本机未安装 arkcli（无法定位可执行文件）
+- **THEN** 对应行 SHALL 标注「arkcli 不可用」类错误，SHALL NOT 阻断其他账号
+
+#### Scenario: arkcli 无法启动标注
+
+- **WHEN** 本机已安装 arkcli 但子进程无法执行（可执行文件解析失败）
+- **THEN** 对应行 SHALL 标注「arkcli 无法启动」类错误并附底层错误摘要，SHALL NOT 阻断其他账号
+
+### Requirement: 账号 home 路径展开（跨平台）
+
+插件 SHALL 对 `planStats.accounts` 中每个账号的 home 路径值展开 `~` 前缀为当前用户 home 目录，SHALL 同时接受 POSIX 写法 `~/…` 与 Windows 写法 `~\…`。展开后的路径 SHALL 作为子进程隔离环境变量传入。
+
+#### Scenario: 两种前缀写法均可展开
+
+- **WHEN** `planStats.accounts` 的某个配置值为 `~/.arkcli-accounts/a` 或 `~\.arkcli-accounts\a`
+- **THEN** 插件 SHALL 将两者都展开为当前用户 home 目录下的 `.arkcli-accounts/a` 路径
 
 ### Requirement: provider 无关的扩展框架
 
@@ -88,14 +107,19 @@ plan-quota-stats 能力：插件按 arkcli profile（账号）聚合展示各账
 
 ### Requirement: ASCII 表 + percent 柱渲染
 
-`plan_stats` 工具返回 SHALL 为 ASCII 表格/柱状图文本：每行一个账号，展示 session / weekly / monthly 三个窗口的百分比柱状图与重置时间；无任何数据时 SHALL 返回"暂无统计数据"。
+`plan_stats` 工具返回 SHALL 为 ASCII 表格/柱状图文本：每行一个账号，展示 session / weekly / monthly 三个窗口的百分比柱状图与重置时间。查询失败（error）的账号行 SHALL 标注错误信息，且错误行 SHALL NOT 被"暂无统计数据"吞掉。仅当所有账号均未订阅且无错误，或账号列表为空时，工具 SHALL 返回"暂无统计数据"。
 
 #### Scenario: 有数据返回图表
 
 - **WHEN** 至少一个账号查询到配额
 - **THEN** 返回文本 SHALL 每行包含一个账号、三个窗口的 percent 柱与 reset_at
 
+#### Scenario: 全部查询失败显示错误行
+
+- **WHEN** 所有账号均无配额数据且至少一个账号存在 error（如未登录 / SSO 失效 / arkcli 缺失）
+- **THEN** 工具 SHALL 渲染表头并为每个账号输出错误行或未订阅行，SHALL NOT 直接返回"暂无统计数据"
+
 #### Scenario: 无数据提示
 
-- **WHEN** 所有账号均无可用配额数据（未订阅/失败/无配置）
+- **WHEN** 所有账号均未订阅且无任何错误，或账号列表为空
 - **THEN** 工具 SHALL 返回"暂无统计数据"

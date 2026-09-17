@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test"
-import { collectPlanQuotas, renderPlanChart, volcArkcliAdapter } from "../src/quota"
+import { collectPlanQuotas, defaultSpawn, buildSpawn, renderPlanChart, volcArkcliAdapter } from "../src/quota"
 import type { SpawnExecutor } from "../src/types"
 
 const okItem = (subscribed = true, periods?: unknown) =>
@@ -50,10 +50,24 @@ test("正常解析 coding-plan 配额,带隔离 HOME", async () => {
   expect(quota.periods[0].resetAt).toBe("2026-09-05T20:00:00+08:00")
   // 命令:无 --profile
   expect(calls[0].args).toEqual(["usage", "plan", "--product", "coding-plan", "--format", "json"])
-  // env:注入隔离 HOME + 归因 env
+  // env:注入隔离 HOME + USERPROFILE(跨平台) + 归因 env
   expect(calls[0].env?.HOME).toBe("/home/volc-a")
+  expect(calls[0].env?.USERPROFILE).toBe("/home/volc-a")
   expect(calls[0].env?.ARKCLI_CALLER_NAME).toBe("opencode")
   expect(calls[0].env?.ARKCLI_SKILL_NAME).toBe("arkcli-usage")
+})
+
+// ===== adapter:每账号隔离 env 同时注入 HOME 与 USERPROFILE =====
+test("每账号隔离 env 同时含 HOME 与 USERPROFILE 且各自独立", async () => {
+  const { exec, calls } = fakeExec({
+    "/home/volc-a": { exitCode: 0, stdout: okItem() },
+    "/home/volc-b": { exitCode: 0, stdout: okItem() },
+  })
+  await collectPlanQuotas({ "volc-a": "/home/volc-a", "volc-b": "/home/volc-b" }, exec)
+  const envA = calls.find((c) => c.env?.HOME === "/home/volc-a")?.env
+  const envB = calls.find((c) => c.env?.HOME === "/home/volc-b")?.env
+  expect(envA?.USERPROFILE).toBe("/home/volc-a")
+  expect(envB?.USERPROFILE).toBe("/home/volc-b")
 })
 
 // ===== adapter:未订阅 =====
@@ -86,6 +100,35 @@ test("arkcli 不可用(ENOENT)分类", async () => {
   const { exec } = fakeExec({ "/home/volc-a": { exitCode: null, stderr: "spawn arkcli ENOENT" } })
   const quota = await volcArkcliAdapter.fetch("volc-a", "/home/volc-a", exec)
   expect(quota.error).toContain("arkcli 不可用")
+})
+
+// ===== adapter:已安装但无法启动 与 未安装 区分 =====
+test("arkcli 无法启动(EINVAL)与未安装(ENOENT)分类不同", async () => {
+  const { exec } = fakeExec({ "/home/volc-a": { exitCode: null, stderr: "spawn arkcli EINVAL" } })
+  const quota = await volcArkcliAdapter.fetch("volc-a", "/home/volc-a", exec)
+  expect(quota.error).toContain("arkcli 无法启动")
+  expect(quota.error).not.toContain("不可用")
+})
+
+// ===== buildSpawn:跨平台执行计划 =====
+test("buildSpawn win32 走 cmd.exe /c 解析 .cmd 垫片", () => {
+  const plan = buildSpawn("win32", "arkcli", ["usage", "plan"])
+  expect(plan.file.toLowerCase()).toContain("cmd.exe")
+  expect(plan.args).toEqual(["/c", "arkcli", "usage", "plan"])
+})
+
+test("buildSpawn POSIX 原样直接执行", () => {
+  const linux = buildSpawn("linux", "arkcli", ["usage", "plan"])
+  expect(linux.file).toBe("arkcli")
+  expect(linux.args).toEqual(["usage", "plan"])
+  expect(buildSpawn("darwin", "arkcli", ["--version"]).file).toBe("arkcli")
+})
+
+// ===== 可选集成:本机有 arkcli 时才跑(无则 skip) =====
+const arkcliPath = typeof Bun !== "undefined" ? Bun.which("arkcli") : null
+test.skipIf(!arkcliPath)("可选集成:defaultSpawn 能启动本机 arkcli", async () => {
+  const res = await defaultSpawn("arkcli", ["--version"], {})
+  expect(res.exitCode).toBe(0)
 })
 
 // ===== adapter:畸形输出 =====
@@ -166,9 +209,32 @@ test("渲染含 profile/percent/重置", () => {
 })
 
 // ===== 渲染:无数据 =====
-test("全失败/全未订阅返回暂无统计数据", () => {
+test("全失败渲染错误行而非暂无统计数据", () => {
+  const out = renderPlanChart([
+    { provider: "volc-a", kind: "coding-plan", subscribed: false, periods: [], error: "未登录(需 arkcli auth login volc-sso)" },
+    { provider: "volc-b", kind: "coding-plan", subscribed: false, periods: [], error: "arkcli 不可用" },
+  ])
+  expect(out).not.toBe("暂无统计数据")
+  expect(out).toContain("coding-plan 官方配额")
+  expect(out).toContain("volc-a")
+  expect(out).toContain("volc-b")
+  expect(out).toContain("未登录")
+  expect(out).toContain("arkcli 不可用")
+})
+
+test("失败与未订阅混合渲染错误行和未订阅行", () => {
   const out = renderPlanChart([
     { provider: "volc-a", kind: "coding-plan", subscribed: false, periods: [], error: "未登录" },
+    { provider: "volc-b", kind: "coding-plan", subscribed: false, periods: [] },
+  ])
+  expect(out).not.toBe("暂无统计数据")
+  expect(out).toContain("未登录")
+  expect(out).toContain("未订阅/无套餐")
+})
+
+test("全部未订阅无错误返回暂无统计数据", () => {
+  const out = renderPlanChart([
+    { provider: "volc-a", kind: "coding-plan", subscribed: false, periods: [] },
     { provider: "volc-b", kind: "coding-plan", subscribed: false, periods: [] },
   ])
   expect(out).toBe("暂无统计数据")

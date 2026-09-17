@@ -77,6 +77,11 @@ test("目录不存在时构造不报错,store 为空", () => {
   expect(c.getStore()).toEqual({})
 })
 
+test("statsDir 已存在时构造不抛错", () => {
+  mkdirSync(statsDir, { recursive: true })
+  expect(() => new StatsCollector(statsDir, { registerExitHooks: false })).not.toThrow()
+})
+
 test("多步对话:同 id 两步不同 token 均累加,req=2", () => {
   const c = makeCollector()
   c.recordUsage(

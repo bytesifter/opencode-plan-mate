@@ -2,7 +2,7 @@
 
 ## 背景与动机
 
-插件核心是「多账号 API key 随机轮询 + 实际用量统计」（`roundrobin_stats`）。但实际用量看不到各账号**官方套餐配额桶**（用了几成、几号刷新）。需求：一次拉齐多个独立火山账号的 Coding Plan 官方 quota，统一视图，且框架与插件「多服务商」定位一致、可扩展。
+插件核心是「多账号 API key 随机轮询 + 实际用量统计」（`plan_mate_stats`）。但实际用量看不到各账号**官方套餐配额桶**（用了几成、几号刷新）。需求：一次拉齐多个独立火山账号的 Coding Plan 官方 quota，统一视图，且框架与插件「多服务商」定位一致、可扩展。
 
 本方案通过 `add-plan-stats` 与 `fix-plan-stats-multi-account` 两个 OpenSpec change 落地（详见 [openspec/changes](../../../openspec/changes/)，含 proposal/specs/design/tasks）。
 
@@ -64,7 +64,7 @@ renderPlanChart(PlanQuota[])   ← ASCII 表 + percent 柱 + 重置时间
 |------|---------|
 | 插件直连 `GetCodingPlanUsage`（HTTP + bearer） | 控制面只认 SSO/AK-SK，coding key 直连被拒 |
 | 共享 arkcli 登录态 + `--profile` 列表 | 单身份模型下所有 profile 同一账号，退化为同一份 plan |
-| 用插件自记录实际用量替代官方 quota | 非官方数据，不满足「看额度」需求（`roundrobin_stats` 已覆盖实际用量视角） |
+| 用插件自记录实际用量替代官方 quota | 非官方数据，不满足「看额度」需求（`plan_mate_stats` 已覆盖实际用量视角） |
 | 登录时每账号重登（不隔离） | 每次查询需真人授权，不可自动化；隔离 HOME 为一次性成本 |
 
 ## 关联文档

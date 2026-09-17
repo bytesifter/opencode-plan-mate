@@ -1,6 +1,7 @@
-import { appendFileSync, mkdirSync } from "node:fs"
+import { appendFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import type { LogLevel, EventContext } from "./types"
+import { ensureDir } from "./fs-util"
 
 /** token 用量(用于 event 层日志) */
 export interface UsageTokens {
@@ -28,12 +29,12 @@ export class Logger {
       this.mode = "rotation"
       this.dir = logDirOrPath
       this.fixedPath = ""
-      mkdirSync(this.dir, { recursive: true })
+      ensureDir(this.dir)
     } else {
       this.mode = "simple"
       this.dir = ""
       this.fixedPath = logDirOrPath
-      mkdirSync(dirname(this.fixedPath), { recursive: true })
+      ensureDir(dirname(this.fixedPath))
     }
   }
 
@@ -103,7 +104,7 @@ export class Logger {
   private write(line: string): void {
     if (this.mode === "rotation") {
       const day = todayLocal()
-      appendFileSync(join(this.dir, `round-robin-${day}.log`), line)
+      appendFileSync(join(this.dir, `plan-mate-${day}.log`), line)
     } else {
       appendFileSync(this.fixedPath, line)
     }

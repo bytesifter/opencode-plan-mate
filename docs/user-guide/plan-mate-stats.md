@@ -29,14 +29,14 @@ fetch-patch 拦截
 - **余额不足 402**（Insufficient Balance）：按配额耗尽熔断 1 小时
 - 全部熔断时 passthrough 回退到 opencode 原生请求，不跨接入点兜底
 
-## 用量统计（roundrobin_stats）
+## 用量统计（plan_mate_stats）
 
-插件通过 `event` hook 按天累计请求数与 token 消耗（input/output/reasoning/cache），内存累积 60 秒把增量**追加式**写入按日 JSONL（多进程并发不互相覆盖）。`roundrobin_stats` 工具聚合所有进程的数据。
+插件通过 `event` hook 按天累计请求数与 token 消耗（input/output/reasoning/cache），内存累积 60 秒把增量**追加式**写入按日 JSONL（多进程并发不互相覆盖）。`plan_mate_stats` 工具聚合所有进程的数据。
 
-对 LLM 说「看轮询统计」，LLM 会调用 `roundrobin_stats` 工具，返回近 7 天 ASCII 柱状图：
+对 LLM 说「看轮询统计」，LLM 会调用 `plan_mate_stats` 工具，返回近 7 天 ASCII 柱状图：
 
 ```
-round-robin 近 7 天统计
+plan-mate 近 7 天统计
 日期      请求                 token
 07-25  ████████████·····    34   ████████████·····   19.7k
 07-24  ████████·········    23   ██████············   15.3k
@@ -46,11 +46,11 @@ round-robin 近 7 天统计
 
 可选参数 `days` 指定天数（如「看近 30 天统计」）。
 
-统计文件位置：`~/.local/share/opencode/round-robin-stats/YYYY-MM-DD.jsonl`（可用 `statsDir` 覆盖）。
+统计文件位置：`~/.local/share/opencode/plan-mate-stats/YYYY-MM-DD.jsonl`（Windows：`%USERPROFILE%\.local\share\opencode\plan-mate-stats\YYYY-MM-DD.jsonl`；可用 `statsDir` 覆盖）。
 
 ## 结构化日志
 
-日志按日轮转，文件名 `round-robin-YYYY-MM-DD.log`（配置 `logPath` 可强制单文件模式，禁用轮转）。
+日志按日轮转，文件名 `plan-mate-YYYY-MM-DD.log`（配置 `logPath` 可强制单文件模式，禁用轮转）。
 
 ```
 2026-07-26 18:51:40.123 INFO  fetch provider=account-a key=#0(..2898) status=200 duration=342ms

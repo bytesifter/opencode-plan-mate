@@ -30,7 +30,7 @@ const server: Plugin = async (_input, options) => {
   const opts = parseOptions(options as Record<string, unknown> | undefined)
 
   if (!globalStats) {
-    const statsDir = opts.statsDir ?? defaultPath("round-robin-stats")
+    const statsDir = opts.statsDir ?? defaultPath("plan-mate-stats")
     globalStatsDir = statsDir
     globalStats = new StatsCollector(statsDir)
     if (opts.logPath) {
@@ -103,8 +103,8 @@ const server: Plugin = async (_input, options) => {
       }
     },
     tool: {
-      roundrobin_stats: tool({
-        description: "查看 opencode-round-robin 按天统计(请求数与 token 消耗)",
+      plan_mate_stats: tool({
+        description: "查看 opencode-plan-mate 按天统计(请求数与 token 消耗)",
         args: { days: tool.schema.number().optional() },
         execute: async (args) => {
           const days = typeof args.days === "number" ? args.days : DEFAULT_CHART_DAYS
@@ -131,7 +131,7 @@ const server: Plugin = async (_input, options) => {
 }
 
 const pluginModule: PluginModule = {
-  id: "opencode-round-robin",
+  id: "opencode-plan-mate",
   server,
 }
 

@@ -1,6 +1,7 @@
 import { test, expect } from "bun:test"
 import { parseOptions, collectProviders } from "../src/config"
 import { homedir } from "node:os"
+import { join } from "node:path"
 
 const fakeConfig = {
   provider: {
@@ -52,7 +53,7 @@ test("parseOptions: planStats.accounts 映射解析", () => {
   const r = parseOptions({ providers: ["a"] })
   expect(r.planStats).toBeUndefined()
   const r2 = parseOptions({ providers: ["a"], planStats: { accounts: { "账号A": "~/arkcli-a", "账号B": "/abs/b" } } })
-  expect(r2.planStats?.accounts["账号A"]).toBe(homedir() + "/arkcli-a")
+  expect(r2.planStats?.accounts["账号A"]).toBe(join(homedir(), "arkcli-a"))
   expect(r2.planStats?.accounts["账号B"]).toBe("/abs/b")
   // 过滤 key/value 非法项
   const r3 = parseOptions({ providers: ["a"], planStats: { accounts: { "ok": "/x", "": "/y", "bad": "" } } })
@@ -65,6 +66,15 @@ test("parseOptions: planStats.accounts 映射解析", () => {
   // profiles 旧键不再生效
   const r6 = parseOptions({ providers: ["a"], planStats: { profiles: ["x"] } as unknown })
   expect(r6.planStats).toBeUndefined()
+})
+
+test("parseOptions: planStats home 兼容 ~/ 与 ~\\ 前缀", () => {
+  const posix = parseOptions({ providers: ["a"], planStats: { accounts: { a: "~/.arkcli-accounts/a" } } })
+  const win = parseOptions({ providers: ["a"], planStats: { accounts: { a: "~\\.arkcli-accounts\\a" } } })
+  const expected = join(homedir(), ".arkcli-accounts", "a")
+  expect(posix.planStats?.accounts["a"]).toBe(expected)
+  expect(win.planStats?.accounts["a"]).toBe(expected)
+  expect(parseOptions({ providers: ["a"], planStats: { accounts: { a: "~" } } }).planStats?.accounts["a"]).toBe(homedir())
 })
 
 test("collectProviders: 返回扁平列表(不分组)", () => {

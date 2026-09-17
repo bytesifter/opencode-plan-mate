@@ -16,15 +16,37 @@ const CALLER_ENV: Record<string, string> = {
 const COL_W = 16
 
 /**
+ * 按平台构造子进程执行计划(纯函数,便于跨平台单测)。
+ *
+ * Windows 上 arkcli 常以 `.cmd`/`.bat` 垫片分发:npm 垫片既无法被无 shell 的 spawn
+ * 按 PATHEXT 解析(Node 不补后缀 → ENOENT),直接写 `arkcli.cmd` 又会被 Node≥18 拒绝
+ * (EINVAL)。故 Windows 走命令解释器 `cmd.exe /c` 解析垫片;POSIX 原样直接执行。
+ */
+export function buildSpawn(
+  platform: NodeJS.Platform,
+  cmd: string,
+  args: string[],
+): { file: string; args: string[] } {
+  if (platform === "win32") {
+    return { file: process.env.ComSpec ?? "cmd.exe", args: ["/c", cmd, ...args] }
+  }
+  return { file: cmd, args }
+}
+
+/**
  * arkcli 子进程默认执行器:spawn 真实命令,捕获 stdout/stderr,超时 kill。
  * exitCode 为 null 表示命令无法启动(如 ENOENT:arkcli 未安装)。
+ *
+ * 注意:账号 home 等动态量一律走 env(见 volcArkcliAdapter),不要拼进 args,
+ * 以免在 Windows `cmd.exe /c` 下引入转义/注入面。
  */
 export const defaultSpawn: SpawnExecutor = (cmd, args, opts) => {
   return new Promise<SpawnResult>((resolve) => {
     let stdout = ""
     let stderr = ""
     let settled = false
-    const child = spawn(cmd, args, { env: { ...process.env, ...(opts?.env ?? {}) } })
+    const plan = buildSpawn(process.platform, cmd, args)
+    const child = spawn(plan.file, plan.args, { env: { ...process.env, ...(opts?.env ?? {}) } })
     child.stdout.on("data", (d: Buffer) => (stdout += d.toString()))
     child.stderr.on("data", (d: Buffer) => (stderr += d.toString()))
     const timer = opts?.timeoutMs ? setTimeout(() => child.kill(), opts.timeoutMs) : undefined
@@ -54,10 +76,10 @@ export const volcArkcliAdapter: QuotaAdapter = {
     const res = await exec(
       "arkcli",
       ["usage", "plan", "--product", "coding-plan", "--format", "json"],
-      { env: { ...CALLER_ENV, HOME: home }, timeoutMs: DEFAULT_TIMEOUT_MS },
+      { env: { ...CALLER_ENV, HOME: home, USERPROFILE: home }, timeoutMs: DEFAULT_TIMEOUT_MS },
     )
     if (res.exitCode === null) {
-      return errQuota(account, `arkcli 不可用: ${res.stderr.trim() || "无法启动 arkcli"}`)
+      return errQuota(account, classifyStartupError(res.stderr))
     }
     if (res.exitCode !== 0) {
       return errQuota(account, classifyError(`${res.stdout}\n${res.stderr}`))
@@ -99,10 +121,13 @@ export async function collectPlanQuotas(
 
 /**
  * 渲染 plan_stats 结果:每行一个 profile,session/weekly/monthly 三窗口 percent 柱 + 重置时间。
- * 无任何可用数据(全失败/全未订阅)时返回"暂无统计数据"。
+ * 错误优先:只要存在 error 就渲染表头 + 错误行,不吞错误。
+ * 仅当既无数据又无错误(全部未订阅/空列表)时返回"暂无统计数据"。
  */
 export function renderPlanChart(quotas: PlanQuota[]): string {
-  if (quotas.filter((q) => q.periods.length > 0).length === 0) {
+  const hasData = quotas.some((q) => q.periods.length > 0)
+  const hasError = quotas.some((q) => !!q.error)
+  if (!hasData && !hasError) {
     return "暂无统计数据"
   }
   const col = (s: string) => s.padEnd(COL_W)
@@ -167,6 +192,15 @@ function parseUsagePlan(profile: string, stdout: string): PlanQuota {
     periods,
     updatedAt: item.updated_at != null ? String(item.updated_at) : undefined,
   }
+}
+
+/** 子进程无法启动时的错误分类:未安装(ENOENT) / 已安装但无法执行(其余) */
+function classifyStartupError(stderr: string): string {
+  if (/\bENOENT\b/.test(stderr)) {
+    return "arkcli 不可用(未安装或不在 PATH)"
+  }
+  const detail = stderr.split("\n").map((l) => l.trim()).find((l) => l.length > 0)
+  return detail ? `arkcli 无法启动: ${detail.slice(0, 120)}` : "arkcli 无法启动"
 }
 
 /** 非零退出码的错误分类:未登录 / profile 不存在 / 其他(取首行摘要) */

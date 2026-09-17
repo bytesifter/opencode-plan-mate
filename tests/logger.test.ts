@@ -155,11 +155,22 @@ test("rotation 模式:文件名含日期", () => {
   const l = new Logger(logDir, { rotation: true })
   l.logFetch("p", 0, "..1234", 200, 10)
   const files = readdirSync(logDir)
-  expect(files.some((f) => f.startsWith("round-robin-") && f.endsWith(".log"))).toBe(true)
-  const dayFile = files.find((f) => f.startsWith("round-robin-"))!
+  expect(files.some((f) => f.startsWith("plan-mate-") && f.endsWith(".log"))).toBe(true)
+  const dayFile = files.find((f) => f.startsWith("plan-mate-"))!
   const content = readFileSync(join(logDir, dayFile), "utf8")
   expect(content).toContain("p")
   expect(content).toContain("INFO")
+})
+
+test("rotation 模式:logDir 已存在不抛错且可写入", () => {
+  mkdirSync(logDir, { recursive: true })
+  let l!: Logger
+  expect(() => {
+    l = new Logger(logDir, { rotation: true })
+  }).not.toThrow()
+  l.logFetch("p", 0, "..1234", 200, 10)
+  const files = readdirSync(logDir)
+  expect(files.some((f) => f.startsWith("plan-mate-") && f.endsWith(".log"))).toBe(true)
 })
 
 test("simple 模式:文件名固定,不轮转", () => {

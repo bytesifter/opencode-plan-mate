@@ -33,7 +33,7 @@ export function renderChart(store: StatsStore, days: number = DEFAULT_DAYS): str
   )
 
   const lines: string[] = []
-  lines.push(`round-robin 近 ${days} 天 per-provider 统计`)
+  lines.push(`plan-mate 近 ${days} 天 per-provider 统计`)
   const header = `日期      ${allProviders.map((p) => pad(p, 20)).join("  ")}`
   lines.push(header)
   lines.push(`${" ".repeat(10)}${allProviders.map(() => "请求      token       ").join("  ")}`)
