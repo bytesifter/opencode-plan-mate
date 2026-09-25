@@ -16,5 +16,5 @@
 
 ## 4. 集成验证
 
-- [ ] 4.1 GUI 重启加载新插件后跑真实对话：`plan_mate_stats` 各 provider 的 req 与真实 step 数一致（不再 3~6 倍虚增）；`~/.local/share/opencode/plan-mate-stats/YYYY-MM-DD.jsonl` 无完全相同重复行
-- [ ] 4.2 全量校验：`bun test`、`bun x tsc --noEmit`、`bun run build` 通过；`openspec validate fix-usage-location-filter` 通过；提交并归档 `fix-usage-tracking-v2`、`fix-usage-dedupe-replay`、`fix-usage-location-filter` 三个 change
+- [ ] 4.1 GUI 重启加载新插件后跑真实对话：`plan_mate_stats` 各 provider 的 req 与真实 step 数一致（不再 3~6 倍虚增）；`~/.local/share/opencode/plan-mate-stats/YYYY-MM-DD.jsonl` 无完全相同重复行（**待用户重启 GUI 后实测**）
+- [x] 4.2 全量校验：`bun test`（163 pass）、`bun x tsc --noEmit`、`bun run build` 通过；`openspec validate fix-usage-location-filter` 通过；已提交并合并 master（`e033d8b`）、推送远端（归档待 4.1 验证通过后执行）
