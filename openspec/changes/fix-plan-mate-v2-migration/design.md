@@ -107,4 +107,4 @@ V1 通过 `config` hook 读 `Config.provider[name].options.{baseURL, apiKey, mod
 1. **apiKey 不暴露**：`Provider.Info` schema（`@opencode/schema/dist/provider.d.ts`）仅含 `settings`/`headers`/`body`/`id`/`name`/`activation`/`package` 等字段，**无 apiKey**（凭证属连接/凭据层）。→ D2 采用配置文件解析路径（`src/config.ts` 新增 `loadProviderConfig` 读取全局 + 所在位置 `opencode.json(c)` 的 `provider` 段，项目级覆盖全局）。
 2. **sessionID 直接可用**：`SessionHttpRequest` / `SessionHttpResponse`（`dist/promise/session.d.ts`）均自带 `sessionID`，**无需 `X-Session-Id` 头**。→ D5 关联映射改为在 `http.request` 钩子里用 `event.sessionID` 建立，`http.response` 用 `event.request` 的 Authorization 头识别所用 key。
 3. **工具注册**：`ctx.tool.transform` 的 `editor.add` 接受 `{name, description, input: JSON Schema, execute}`，`execute` 返回 `Promise<{content}>`（promise API）。
-4. **运行时行为（GUI 重启后确认，见任务 5.1 / 8.1）**：`message.updated` 事件是否仍以 v1 兼容形态（`properties.info`）发送、钩子触发与工具可见性，待 GUI 重启后经日志验证。
+4. **运行时确认（2026-09-25，GUI 2.0.16 重启后）**：`message.updated` 事件以 v1 兼容形态（`properties.info`）送达并成功归因（`plan_mate_stats` 返回真实按账号统计）；钩子触发与工具可见性经实际调用确认。

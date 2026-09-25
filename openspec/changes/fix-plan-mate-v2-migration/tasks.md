@@ -2,9 +2,9 @@
 
 ## 1. Spike：验证 v2 插件 API 可行性
 
-- [ ] 1.1 在项目 `.opencode/plugins/` 下放一个最小 v2 插件（`Plugin.define({id, setup})` + `ctx.session.hook("http.request")` 打日志 + `ctx.tool.transform` 注册一个测试工具），在 opencode GUI 2.0.16 下重启并确认：插件被加载、`http.request` 钩子随 LLM 请求触发、测试工具在工具列表可见；验证结论记录到 design.md 的 Open Questions 答复中
-- [ ] 1.2 用最小插件确认两个 spike 问题并记录结论：`ctx.provider` 是否暴露 provider 的 apiKey（决定 D2 走 domain API 还是文件解析）；v2 是否仍注入 `X-Session-Id` 请求头（决定 D5 关联映射实现）
-- [ ] 1.3 清理 spike 插件，恢复 `.opencode/plugins/` 为空
+- [x] 1.1 在项目 `.opencode/plugins/` 下放一个最小 v2 插件（`Plugin.define({id, setup})` + `ctx.session.hook("http.request")` 打日志 + `ctx.tool.transform` 注册一个测试工具），在 opencode GUI 2.0.16 下重启并确认：插件被加载、`http.request` 钩子随 LLM 请求触发、测试工具在工具列表可见；验证结论记录到 design.md 的 Open Questions 答复中
+- [x] 1.2 用最小插件确认两个 spike 问题并记录结论：`ctx.provider` 是否暴露 provider 的 apiKey（决定 D2 走 domain API 还是文件解析）；v2 是否仍注入 `X-Session-Id` 请求头（决定 D5 关联映射实现）
+- [x] 1.3 清理 spike 插件，恢复 `.opencode/plugins/` 为空
 
 ## 2. 依赖与构建基线
 
@@ -25,7 +25,7 @@
 
 ## 5. 全局配置迁移
 
-- [ ] 5.1 将 `C:\Users\nixgn\.config\opencode\opencode.jsonc` 的 `plugin` 数组改为 `plugins` 数组，`["file:///D:/code/opencode-plan-mate", {...}]` 改写为 `{"package": "file:///D:/code/opencode-plan-mate", "options": {...}}`，options 内容保持不变；重启 GUI 后确认 opencode 日志出现 plan-mate 加载记录（不再静默丢弃）
+- [x] 5.1 将 `C:\Users\nixgn\.config\opencode\opencode.jsonc` 的 `plugin` 数组改为 `plugins` 数组，`["file:///D:/code/opencode-plan-mate", {...}]` 改写为 `{"package": "file:///D:/code/opencode-plan-mate", "options": {...}}`，options 内容保持不变；重启 GUI 后确认 opencode 日志出现 plan-mate 加载记录（不再静默丢弃）
 
 ## 6. 文档更新
 
@@ -41,11 +41,11 @@
 
 ## 8. 集成验证
 
-- [ ] 8.1 重启 opencode GUI，确认：插件加载无报错、`plan_mate_stats` 与 `plan_stats` 工具可被 LLM 调用、轮询请求日志与按日统计 JSONL 正常落盘、429/402 熔断日志符合预期
+- [x] 8.1 重启 opencode GUI，确认：插件加载无报错、`plan_mate_stats` 与 `plan_stats` 工具可被 LLM 调用、轮询请求日志与按日统计 JSONL 正常落盘、429/402 熔断日志符合预期
 - [x] 8.2 全量校验：`bun test`、`bun x tsc --noEmit`、`bun run build` 通过；`openspec validate fix-plan-mate-v2-migration` 通过；git 提交迁移完成
 
 ## 9. 目录包入口修复（方案 A，运行时发现）
 
 - [x] 9.1 在仓库根新增 `server.js`（内容 `export { default } from "./dist/index.js"`）作为 v2 目录包的 server 入口，验证 `bun x tsc --noEmit` 与 `bun test` 不受影响
-- [ ] 9.2 重启 opencode GUI 后台服务后，确认日志出现 `loading plugin id=opencode-plan-mate` 加载记录且无报错（验证 D9 入口解析生效）
-- [ ] 9.3 验证 `plan_mate_stats` / `plan_stats` 工具可被 LLM 调用、轮询日志与按日统计 JSONL 正常落盘、429/402 熔断日志符合预期（补全 8.1 的 GUI 运行时验证；同时确认 `message.updated` 事件以 v1 兼容形态送达，回答 spike 第 4 点）
+- [x] 9.2 重启 opencode GUI 后台服务后，确认日志出现 `loading plugin id=opencode-plan-mate` 加载记录且无报错（验证 D9 入口解析生效）
+- [x] 9.3 验证 `plan_mate_stats` / `plan_stats` 工具可被 LLM 调用、轮询日志与按日统计 JSONL 正常落盘、429/402 熔断日志符合预期（补全 8.1 的 GUI 运行时验证；同时确认 `message.updated` 事件以 v1 兼容形态送达，回答 spike 第 4 点）
