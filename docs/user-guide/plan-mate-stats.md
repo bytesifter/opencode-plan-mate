@@ -36,6 +36,8 @@ ctx.session.hook("http.response") 钩子：检查 429/402，触发熔断
 
 插件通过 `ctx.event.subscribe()` 订阅 v2 事件 `session.step.ended` / `session.step.failed`（每次模型 step 结束/失败各发一次，数据在 `data` 字段），按天累计请求数与 token 消耗（input/output/reasoning/cache），内存累积 60 秒把增量**追加式**写入按日 JSONL（多进程并发不互相覆盖）。`plan_mate_stats` 工具聚合所有进程的数据。
 
+**provider 归因粒度**：统计的 `provider` 键在两种来源下取值不同——请求经过轮询池（URL 匹配已配置 baseURL）时记**池账号名**（如 `account-a`）；请求未经过池（全熔断 passthrough、或会话使用池外 provider）时记**会话 model 的 providerID**。文档化配置中池账号名即 provider id（如 `account-a`），两种来源为同一字符串，不产生混合列；仅当会话使用池外 provider 时才可能出现额外的厂商粒度列（如 `volcengine`），该列语义为「池外/未接住的流量」。
+
 插件按**位置（目录）过滤**事件：GUI 打开多个项目时，每个位置各加载一份插件实例，而事件流是全局的——各实例只处理 `event.location.directory` 等于自己加载目录的会话事件，其他位置的会话不累计，避免多实例重复计数。实例内另有 durable 事件身份去重（同一步只计一次）与回放过滤（忽略服务重启后回放的历史事件）。
 
 对 LLM 说「看轮询统计」，LLM 会调用 `plan_mate_stats` 工具，返回近 7 天 ASCII 柱状图：

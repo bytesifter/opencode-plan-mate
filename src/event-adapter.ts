@@ -7,6 +7,7 @@
  * - 数据位于 `event.data`,含 `sessionID` / `assistantMessageID` / `finish` / `tokens` / `cost`
  * - v2 事件不带 `providerID`,归因由 index.ts 的关联映射 + 会话查询处理
  */
+import { num } from "./util"
 
 /** 解析后的单步用量(归一化形态,供统计与日志使用) */
 export interface StepUsage {
@@ -166,9 +167,4 @@ export function isReplayedEvent(created: number, startTime: number): boolean {
  */
 export function isLocationMatch(eventLocation: string | undefined, pluginDirectory: string): boolean {
   return typeof eventLocation === "string" && eventLocation.length > 0 && eventLocation === pluginDirectory
-}
-
-/** 容错数值转换:非数字归零 */
-function num(v: unknown): number {
-  return typeof v === "number" && !Number.isNaN(v) ? v : 0
 }

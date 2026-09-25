@@ -82,16 +82,8 @@ export type LogLevel = "INFO" | "WARN" | "ERROR"
 export interface EventContext {
   /** sessionID 截短为前 8 位(隐私保护) */
   sessionID?: string
-  /** 模型 ID(如 glm-5.2) */
-  modelID?: string
   /** provider ID(如 volxc9208) */
   providerID?: string
-  /** 模式(如 code/plan) */
-  mode?: string
-  /** agent 名 */
-  agent?: string
-  /** 消息耗时(毫秒,从 time.completed - time.created 计算) */
-  durationMs?: number
 }
 
 /**
@@ -132,6 +124,8 @@ export interface SpawnResult {
   stderr: string
   /** 退出码;null 表示命令无法启动(如 ENOENT)或被杀 */
   exitCode: number | null
+  /** 是否因超时被 kill(区分"命令无法启动"与"执行超时",缺省视为未超时) */
+  timedOut?: boolean
 }
 
 /**

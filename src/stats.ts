@@ -2,6 +2,9 @@ import type { StatsStore, ProviderStats, StatsRecord } from "./types"
 import { appendFileSync, existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { ensureDir } from "./fs-util"
+import { num, todayLocal } from "./util"
+
+export { todayLocal } from "./util"
 
 /**
  * Usage 输入:单步用量字段(与事件解析层解耦,便于测试)。
@@ -179,20 +182,6 @@ function toSnapshot(tokens: { input: number; output: number; reasoning: number; 
     cacheRead: num(tokens.cache.read),
     cacheWrite: num(tokens.cache.write),
   }
-}
-
-/** 容错数值转换:非数字归零 */
-function num(v: unknown): number {
-  return typeof v === "number" && !Number.isNaN(v) ? v : 0
-}
-
-/** 本地日期 YYYY-MM-DD(按本地时区) */
-export function todayLocal(): string {
-  const d = new Date()
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, "0")
-  const day = String(d.getDate()).padStart(2, "0")
-  return `${y}-${m}-${day}`
 }
 
 /** 向 store 的 (day, provider) 累加一次用量增量 */

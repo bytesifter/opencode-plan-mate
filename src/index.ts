@@ -132,7 +132,7 @@ export default Plugin.define({
         }
       }
       for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
-        await handleEvent(event, globalStats!, globalLogger!, resolveProvider)
+        await safeHandleEvent(() => handleEvent(event, globalStats!, globalLogger!, resolveProvider))
       }
     })()
 
@@ -175,6 +175,18 @@ async function handleEvent(
   }
   if (cleanup) {
     corrMap.delete(usage.sessionID)
+  }
+}
+
+/**
+ * 单事件处理异常隔离包装:handler 抛错时记 stderr 并吞掉,不向订阅循环抛。
+ * 保证事件流中单个坏事件不会中断后续所有统计(见 specs/usage-tracking 事件处理异常隔离)。
+ */
+export async function safeHandleEvent(handle: () => Promise<void>): Promise<void> {
+  try {
+    await handle()
+  } catch (err) {
+    console.error("[opencode-plan-mate] 事件处理失败,已跳过该事件:", err)
   }
 }
 

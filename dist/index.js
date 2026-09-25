@@ -2,7 +2,7 @@
 function define(plugin) {
   return plugin;
 }
-// node_modules/effect/dist/Pipeable.js
+// node_modules/@opencode/schema/node_modules/effect/dist/Pipeable.js
 var pipeArguments = (self, args) => {
   switch (args.length) {
     case 0:
@@ -45,7 +45,7 @@ var Class = /* @__PURE__ */ function() {
   return PipeableBase;
 }();
 
-// node_modules/effect/dist/Function.js
+// node_modules/@opencode/schema/node_modules/effect/dist/Function.js
 var dual = function(arity, body) {
   if (typeof arity === "function") {
     return function() {
@@ -114,7 +114,7 @@ function memoizeIdempotent(f) {
   };
 }
 
-// node_modules/effect/dist/internal/equal.js
+// node_modules/@opencode/schema/node_modules/effect/dist/internal/equal.js
 var getAllObjectKeys = (obj) => {
   const keys = new Set(Reflect.ownKeys(obj));
   if (obj.constructor === Object)
@@ -138,7 +138,7 @@ var getAllObjectKeys = (obj) => {
 };
 var byReferenceInstances = /* @__PURE__ */ new WeakSet;
 
-// node_modules/effect/dist/Predicate.js
+// node_modules/@opencode/schema/node_modules/effect/dist/Predicate.js
 function isString(input) {
   return typeof input === "string";
 }
@@ -177,7 +177,7 @@ function isError(input) {
   return input instanceof Error;
 }
 
-// node_modules/effect/dist/Hash.js
+// node_modules/@opencode/schema/node_modules/effect/dist/Hash.js
 var symbol = "~effect/interfaces/Hash";
 var hash = (self) => {
   switch (typeof self) {
@@ -301,7 +301,7 @@ function withVisitedTracking(obj, fn) {
   return result;
 }
 
-// node_modules/effect/dist/Equal.js
+// node_modules/@opencode/schema/node_modules/effect/dist/Equal.js
 var symbol2 = "~effect/interfaces/Equal";
 function equals() {
   if (arguments.length === 1) {
@@ -498,7 +498,7 @@ function makeCompareSet(equivalence) {
 var compareSets = /* @__PURE__ */ makeCompareSet(compareBoth);
 var isEqual = (u) => hasProperty(u, symbol2);
 
-// node_modules/effect/dist/Redactable.js
+// node_modules/@opencode/schema/node_modules/effect/dist/Redactable.js
 var symbolRedactable = /* @__PURE__ */ Symbol.for("~effect/Redactable");
 var isRedactable = (u) => hasProperty(u, symbolRedactable);
 function redact(u) {
@@ -521,7 +521,7 @@ var emptyContext = {
   }
 };
 
-// node_modules/effect/dist/Formatter.js
+// node_modules/@opencode/schema/node_modules/effect/dist/Formatter.js
 function format(input, options) {
   const space = options?.space ?? 0;
   const ancestors = new WeakSet;
@@ -625,7 +625,7 @@ function formatJson(input, options) {
   }, options?.space) ?? "null";
 }
 
-// node_modules/effect/dist/Inspectable.js
+// node_modules/@opencode/schema/node_modules/effect/dist/Inspectable.js
 var NodeInspectSymbol = /* @__PURE__ */ Symbol.for("nodejs.util.inspect.custom");
 var toJson = (input) => {
   try {
@@ -652,7 +652,7 @@ var BaseProto = {
   }
 };
 
-// node_modules/effect/dist/Utils.js
+// node_modules/@opencode/schema/node_modules/effect/dist/Utils.js
 class SingleShotGen {
   called = false;
   self;
@@ -691,7 +691,7 @@ var pickInternalCall = () => {
 };
 var internalCall = /* @__PURE__ */ pickInternalCall();
 
-// node_modules/effect/dist/internal/record.js
+// node_modules/@opencode/schema/node_modules/effect/dist/internal/record.js
 function assignProperty(self, key, value) {
   if (key === "__proto__") {
     Object.defineProperty(self, key, {
@@ -712,7 +712,7 @@ function assignProperties(self, source) {
   }
 }
 
-// node_modules/effect/dist/internal/core.js
+// node_modules/@opencode/schema/node_modules/effect/dist/internal/core.js
 var EffectTypeId = `~effect/Effect`;
 var ExitTypeId = `~effect/Exit`;
 var effectVariance = {
@@ -1054,18 +1054,18 @@ var DoneVoid = {
   value: undefined
 };
 
-// node_modules/effect/dist/Effectable.js
+// node_modules/@opencode/schema/node_modules/effect/dist/Effectable.js
 var Prototype2 = (options) => makePrimitiveProto({
   op: options.label,
   [evaluate]: options.evaluate
 });
 
-// node_modules/effect/dist/Equivalence.js
+// node_modules/@opencode/schema/node_modules/effect/dist/Equivalence.js
 var make = (isEquivalent) => (self, that) => self === that || isEquivalent(self, that);
 var isStrictEquivalent = (x, y) => x === y;
 var strictEqual = () => isStrictEquivalent;
 
-// node_modules/effect/dist/internal/option.js
+// node_modules/@opencode/schema/node_modules/effect/dist/internal/option.js
 var TypeId = "~effect/data/Option";
 var CommonProto = {
   [TypeId]: {
@@ -1131,7 +1131,7 @@ var some = (value) => {
   return a;
 };
 
-// node_modules/effect/dist/internal/result.js
+// node_modules/@opencode/schema/node_modules/effect/dist/internal/result.js
 var TypeId2 = "~effect/data/Result";
 var CommonProto2 = {
   [TypeId2]: {
@@ -1197,7 +1197,7 @@ var succeed = (success) => {
   return a;
 };
 
-// node_modules/effect/dist/Order.js
+// node_modules/@opencode/schema/node_modules/effect/dist/Order.js
 function make2(compare) {
   return (self, that) => self === that ? 0 : compare(self, that);
 }
@@ -1215,7 +1215,7 @@ var isGreaterThan = (O) => dual(2, (self, that) => O(self, that) === 1);
 var isLessThanOrEqualTo = (O) => dual(2, (self, that) => O(self, that) !== 1);
 var isGreaterThanOrEqualTo = (O) => dual(2, (self, that) => O(self, that) !== -1);
 
-// node_modules/effect/dist/Option.js
+// node_modules/@opencode/schema/node_modules/effect/dist/Option.js
 var none2 = () => none;
 var some2 = some;
 var isNone2 = isNone;
@@ -1234,7 +1234,7 @@ var liftThrowable = (f) => (...a) => {
 var map = /* @__PURE__ */ dual(2, (self, f) => isNone2(self) ? none2() : some2(f(self.value)));
 var filter = /* @__PURE__ */ dual(2, (self, predicate) => isNone2(self) ? none2() : predicate(self.value) ? some2(self.value) : none2());
 
-// node_modules/effect/dist/Context.js
+// node_modules/@opencode/schema/node_modules/effect/dist/Context.js
 var ServiceTypeId = "~effect/Context/Service";
 var Service = function() {
   function KeyClass() {}
@@ -1420,10 +1420,10 @@ var serviceNotFoundError = (service) => {
 };
 var Reference = Service;
 
-// node_modules/effect/dist/internal/array.js
+// node_modules/@opencode/schema/node_modules/effect/dist/internal/array.js
 var isArrayNonEmpty = (self) => self.length > 0;
 
-// node_modules/effect/dist/Result.js
+// node_modules/@opencode/schema/node_modules/effect/dist/Result.js
 var succeed2 = succeed;
 var fail2 = fail;
 var isFailure2 = isFailure;
@@ -1432,7 +1432,7 @@ var match2 = /* @__PURE__ */ dual(2, (self, {
   onSuccess
 }) => isFailure2(self) ? onFailure(self.failure) : onSuccess(self.success));
 
-// node_modules/effect/dist/Array.js
+// node_modules/@opencode/schema/node_modules/effect/dist/Array.js
 var Array2 = globalThis.Array;
 var fromIterable = (collection) => Array2.isArray(collection) ? collection : Array2.from(collection);
 var append = /* @__PURE__ */ dual(2, (self, last) => [...self, last]);
@@ -1480,7 +1480,7 @@ var dedupe = (self) => {
   return out;
 };
 
-// node_modules/effect/dist/Scheduler.js
+// node_modules/@opencode/schema/node_modules/effect/dist/Scheduler.js
 var Scheduler = /* @__PURE__ */ Reference("effect/Scheduler", {
   fiberCached: true,
   defaultValue: () => new MixedScheduler
@@ -1590,7 +1590,7 @@ var PreventSchedulerYield = /* @__PURE__ */ Reference("effect/Scheduler/PreventS
   defaultValue: () => false
 });
 
-// node_modules/effect/dist/Data.js
+// node_modules/@opencode/schema/node_modules/effect/dist/Data.js
 var Class2 = class extends Class {
   constructor(props) {
     super();
@@ -1601,7 +1601,7 @@ var Class2 = class extends Class {
 };
 var TaggedError2 = TaggedError;
 
-// node_modules/effect/dist/Encoding.js
+// node_modules/@opencode/schema/node_modules/effect/dist/Encoding.js
 var EncodingErrorTypeId = "~effect/encoding/EncodingError";
 
 class EncodingError extends (/* @__PURE__ */ TaggedError2("EncodingError")) {
@@ -1689,14 +1689,14 @@ for (let i = 0;i < 256; i++) {
   byteToHex.push(i.toString(16).padStart(2, "0"));
 }
 
-// node_modules/effect/dist/Tracer.js
+// node_modules/@opencode/schema/node_modules/effect/dist/Tracer.js
 var ParentSpanKey = "effect/Tracer/ParentSpan";
 var TracerKey = "effect/Tracer";
 
-// node_modules/effect/dist/internal/metric.js
+// node_modules/@opencode/schema/node_modules/effect/dist/internal/metric.js
 var FiberRuntimeMetricsKey = "effect/observability/Metric/FiberRuntimeMetricsKey";
 
-// node_modules/effect/dist/internal/references.js
+// node_modules/@opencode/schema/node_modules/effect/dist/internal/references.js
 var CurrentStackFrame = /* @__PURE__ */ Reference("effect/References/CurrentStackFrame", {
   fiberCached: true,
   defaultValue: constUndefined
@@ -1710,7 +1710,7 @@ var MinimumLogLevel = /* @__PURE__ */ Reference("effect/References/MinimumLogLev
   defaultValue: () => "Info"
 });
 
-// node_modules/effect/dist/internal/effect.js
+// node_modules/@opencode/schema/node_modules/effect/dist/internal/effect.js
 class Interrupt extends ReasonBase {
   fiberId;
   constructor(fiberId, annotations = constEmptyAnnotations) {
@@ -2621,19 +2621,19 @@ var logLevelColors = {
   Fatal: [colors.bgBrightRed, colors.black]
 };
 
-// node_modules/effect/dist/Exit.js
+// node_modules/@opencode/schema/node_modules/effect/dist/Exit.js
 var succeed4 = exitSucceed;
 var failCause2 = exitFailCause;
 var fail4 = exitFail;
 var void_2 = exitVoid;
 var isSuccess3 = exitIsSuccess;
 
-// node_modules/effect/dist/Cause.js
+// node_modules/@opencode/schema/node_modules/effect/dist/Cause.js
 var isFailReason2 = isFailReason;
 var map5 = causeMap;
 var IllegalArgumentError2 = IllegalArgumentError;
 
-// node_modules/effect/dist/internal/dateTime.js
+// node_modules/@opencode/schema/node_modules/effect/dist/internal/dateTime.js
 var TypeId4 = "~effect/time/DateTime";
 var TimeZoneTypeId = "~effect/time/DateTime/TimeZone";
 var Proto2 = {
@@ -2831,11 +2831,11 @@ var formatIsoOffset = (self) => {
 };
 var formatIsoZoned = (self) => self.zone._tag === "Offset" ? formatIsoOffset(self) : `${formatIsoOffset(self)}[${self.zone.id}]`;
 
-// node_modules/effect/dist/String.js
+// node_modules/@opencode/schema/node_modules/effect/dist/String.js
 var String2 = globalThis.String;
 var trim = (self) => self.trim();
 
-// node_modules/effect/dist/Effect.js
+// node_modules/@opencode/schema/node_modules/effect/dist/Effect.js
 var tryPromise2 = tryPromise;
 var succeed5 = succeed3;
 var succeedNone2 = succeedNone;
@@ -2853,7 +2853,7 @@ var mapErrorEager2 = mapErrorEager;
 var flatMapEager2 = flatMapEager;
 var fnUntracedEager2 = fnUntracedEager;
 
-// node_modules/effect/dist/DateTime.js
+// node_modules/@opencode/schema/node_modules/effect/dist/DateTime.js
 var isDateTime2 = isDateTime;
 var isUtc2 = isUtc;
 var Equivalence2 = Equivalence;
@@ -2865,7 +2865,7 @@ var toUtc2 = toUtc;
 var toDateUtc2 = toDateUtc;
 var toEpochMillis2 = toEpochMillis;
 var formatIso2 = formatIso;
-// node_modules/effect/dist/internal/schema/annotations.js
+// node_modules/@opencode/schema/node_modules/effect/dist/internal/schema/annotations.js
 function resolve(ast) {
   return ast.checks ? ast.checks[ast.checks.length - 1].annotations : ast.annotations;
 }
@@ -2877,7 +2877,7 @@ var SENTINELS_ANNOTATION_KEY = "~sentinels";
 var CONSTRUCTOR_ANNOTATION_KEY = "~constructor";
 var resolveBrands = /* @__PURE__ */ resolveAt("brands");
 
-// node_modules/effect/dist/internal/schema/parser.js
+// node_modules/@opencode/schema/node_modules/effect/dist/internal/schema/parser.js
 var missing = /* @__PURE__ */ Symbol();
 var succeed6 = succeed4;
 var missingExit = /* @__PURE__ */ succeed6(missing);
@@ -2885,7 +2885,7 @@ var sameExit = /* @__PURE__ */ succeed6(missing);
 var toOption = (value) => value === missing ? none2() : some2(value);
 var fromOptionExit = (option) => option._tag === "None" ? missingExit : succeed6(option.value);
 
-// node_modules/effect/dist/SchemaIssue.js
+// node_modules/@opencode/schema/node_modules/effect/dist/SchemaIssue.js
 var TypeId5 = "~effect/SchemaIssue/Issue";
 function isIssue(u) {
   return hasProperty(u, TypeId5) && u[TypeId5] === TypeId5;
@@ -3032,7 +3032,7 @@ function normalizeFilterOutput(ast, out, input, options) {
   return makeSingle(out, input, options);
 }
 
-// node_modules/effect/dist/internal/schema/cause.js
+// node_modules/@opencode/schema/node_modules/effect/dist/internal/schema/cause.js
 function getSchemaIssue(cause) {
   let issue;
   for (const reason of cause.reasons) {
@@ -3053,7 +3053,7 @@ function getSchemaIssueOrThrow(cause, message) {
   return issue;
 }
 
-// node_modules/effect/dist/SchemaGetter.js
+// node_modules/@opencode/schema/node_modules/effect/dist/SchemaGetter.js
 class Getter extends Class {
   run;
   constructor(run) {
@@ -3116,7 +3116,7 @@ function decodeBase642() {
   }, input, options)));
 }
 
-// node_modules/effect/dist/SchemaTransformation.js
+// node_modules/@opencode/schema/node_modules/effect/dist/SchemaTransformation.js
 var TypeId6 = "~effect/SchemaTransformation/Transformation";
 
 class Transformation {
@@ -3231,7 +3231,7 @@ var dateTimeUtcFromString = /* @__PURE__ */ transformOrFail2({
   encode: (utc) => succeed5(formatIso2(utc))
 });
 
-// node_modules/effect/dist/SchemaAST.js
+// node_modules/@opencode/schema/node_modules/effect/dist/SchemaAST.js
 function makeGuard(tag) {
   return (ast) => ast._tag === tag;
 }
@@ -4934,7 +4934,7 @@ var StringTree = /* @__PURE__ */ new Declaration([], () => (input, ast, options)
 });
 var unknownToStringTree = /* @__PURE__ */ new Link(StringTree, /* @__PURE__ */ passthrough2());
 
-// node_modules/effect/dist/SchemaParser.js
+// node_modules/@opencode/schema/node_modules/effect/dist/SchemaParser.js
 function makeEffect(schema) {
   const parser = runWithCompiler(constructorCompiler, toType(schema.ast));
   return (input, options) => {
@@ -5144,7 +5144,7 @@ function makeParser(ast, compile, compileConstructorDefault, constructorDefault)
   };
 }
 
-// node_modules/effect/dist/internal/schema/schema.js
+// node_modules/@opencode/schema/node_modules/effect/dist/internal/schema/schema.js
 var TypeId8 = "~effect/Schema/Schema";
 var SchemaProto = {
   [TypeId8]: TypeId8,
@@ -5174,7 +5174,7 @@ function make8(ast, options) {
   return self;
 }
 
-// node_modules/effect/dist/Struct.js
+// node_modules/@opencode/schema/node_modules/effect/dist/Struct.js
 var omit = /* @__PURE__ */ dual(2, (self, keys) => {
   return buildStruct(self, (k, v) => !keys.includes(k) ? [k, v] : undefined);
 });
@@ -5193,7 +5193,7 @@ function buildStruct(source, f) {
   return out;
 }
 
-// node_modules/effect/dist/internal/schema/toEquivalence.js
+// node_modules/@opencode/schema/node_modules/effect/dist/internal/schema/toEquivalence.js
 var toEquivalence = /* @__PURE__ */ memoize((ast) => {
   return recur(ast, []);
 });
@@ -5317,11 +5317,11 @@ function recur(ast, path) {
   }
 }
 
-// node_modules/effect/dist/RegExp.js
+// node_modules/@opencode/schema/node_modules/effect/dist/RegExp.js
 var RegExp2 = globalThis.RegExp;
 var escape = (string) => string.replace(/[/\\^$*+?.()|[\]{}]/g, "\\$&");
 
-// node_modules/effect/dist/Schema.js
+// node_modules/@opencode/schema/node_modules/effect/dist/Schema.js
 var TypeId9 = TypeId8;
 function declareConstructor() {
   return (typeParameters, run, annotations) => {
@@ -9296,6 +9296,10 @@ function collectProviders(config, providers) {
 class ProviderPool {
   entries;
   byBaseURL = new Map;
+  byKeyIndex = new Map;
+  byKeyEntry = new Map;
+  byKeyAccount = new Map;
+  modelVariance = new Map;
   cooldownMs;
   quotaCooldownMs;
   cooldowns = new Map;
@@ -9304,12 +9308,19 @@ class ProviderPool {
     this.cooldownMs = cooldownMs;
     this.quotaCooldownMs = quotaCooldownMs;
     for (const e of entries) {
+      this.byKeyIndex.set(e.key, this.byKeyEntry.size);
+      this.byKeyEntry.set(e.key, e);
+      this.byKeyAccount.set(e.key, e.account);
       const arr = this.byBaseURL.get(e.baseURL);
       if (arr) {
         arr.push(e);
       } else {
         this.byBaseURL.set(e.baseURL, [e]);
       }
+    }
+    for (const [baseURL, group] of this.byBaseURL) {
+      const first = modelFingerprint(group[0].models);
+      this.modelVariance.set(baseURL, group.some((e) => modelFingerprint(e.models) !== first));
     }
   }
   get entryCount() {
@@ -9346,43 +9357,67 @@ class ProviderPool {
     return true;
   }
   keyIndex(key) {
-    return this.entries.findIndex((e) => e.key === key);
+    return this.byKeyIndex.get(key) ?? -1;
   }
   entryByKey(key) {
-    return this.entries.find((e) => e.key === key);
+    return this.byKeyEntry.get(key);
   }
   accountName(key) {
-    return this.entries.find((e) => e.key === key)?.account ?? "unknown";
+    return this.byKeyAccount.get(key) ?? "unknown";
   }
   findBaseURL(url) {
-    for (const e of this.entries) {
-      if (url.startsWith(e.baseURL))
-        return e.baseURL;
+    for (const baseURL of this.byBaseURL.keys()) {
+      if (url.startsWith(baseURL))
+        return baseURL;
     }
     return null;
   }
+  hasModelVariance(baseURL) {
+    return this.modelVariance.get(baseURL) ?? true;
+  }
+}
+function modelFingerprint(models) {
+  return [...models].sort().join("|");
 }
 
 // src/http-hooks.ts
 var HTTP_TOO_MANY_REQUESTS = 429;
 var HTTP_PAYMENT_REQUIRED = 402;
 var startTimes = new Map;
+var START_TIME_MAX_AGE_MS = 10 * 60 * 1000;
+var START_TIME_PRUNE_THRESHOLD = 64;
+function pruneStartTimes(entries, now, maxAgeMs = START_TIME_MAX_AGE_MS) {
+  for (const [k, ts] of entries) {
+    if (now - ts > maxAgeMs)
+      entries.delete(k);
+  }
+}
+function setStartTime(key, now) {
+  if (startTimes.size >= START_TIME_PRUNE_THRESHOLD) {
+    pruneStartTimes(startTimes, now);
+  }
+  startTimes.set(key, now);
+}
 async function handleHttpRequest(event, pool, callbacks) {
   const url = event.request.url;
   const originalBaseURL = pool.findBaseURL(url);
   if (!originalBaseURL)
     return;
-  const model = await extractModel(event.request);
+  const extract = callbacks?.extractModel ?? extractModel;
+  const model = pool.hasModelVariance(originalBaseURL) ? await extract(event.request) : undefined;
   const entry = pool.next(model, originalBaseURL);
   if (!entry)
     return;
   const headers = new Headers(event.request.headers);
   headers.set("Authorization", `Bearer ${entry.key}`);
   event.request = new Request(event.request, { headers });
-  startTimes.set(`${event.sessionID}:${event.kind}`, Date.now());
+  setStartTime(`${event.sessionID}:${event.kind}`, Date.now());
   callbacks?.onCorrelate?.(event.sessionID, entry.account);
 }
 async function handleHttpResponse(event, pool, callbacks) {
+  const startKey = `${event.sessionID}:${event.kind}`;
+  const startMs = startTimes.get(startKey);
+  startTimes.delete(startKey);
   const key = bearerKey(event.request.headers.get("Authorization"));
   if (!key)
     return;
@@ -9398,10 +9433,7 @@ async function handleHttpResponse(event, pool, callbacks) {
     pool.markCooldown(key, pool.quotaCooldownMs);
   }
   if (entry) {
-    const startKey = `${event.sessionID}:${event.kind}`;
-    const startMs = startTimes.get(startKey) ?? Date.now();
-    startTimes.delete(startKey);
-    callbacks?.onResponse?.(pool, entry, status, Date.now() - startMs, cooldownType);
+    callbacks?.onResponse?.(pool, entry, status, Date.now() - (startMs ?? Date.now()), cooldownType);
   }
 }
 function bearerKey(auth) {
@@ -9449,6 +9481,18 @@ import { existsSync as existsSync2, mkdirSync } from "node:fs";
 function ensureDir(dir) {
   if (!existsSync2(dir))
     mkdirSync(dir, { recursive: true });
+}
+
+// src/util.ts
+function num(v) {
+  return typeof v === "number" && !Number.isNaN(v) ? v : 0;
+}
+function todayLocal() {
+  const d = new Date;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 // src/stats.ts
@@ -9564,16 +9608,6 @@ function toSnapshot(tokens) {
     cacheWrite: num(tokens.cache.write)
   };
 }
-function num(v) {
-  return typeof v === "number" && !Number.isNaN(v) ? v : 0;
-}
-function todayLocal() {
-  const d = new Date;
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
 function addTo(store, day, provider, tokens, cost) {
   const dayData = store[day] ?? {};
   const s = dayData[provider] ?? newProviderStats();
@@ -9655,11 +9689,11 @@ function resolveStepUsage(event) {
   if (typeof sessionID !== "string" || typeof tokens !== "object" || tokens === null)
     return null;
   const t = tokens;
-  const input = num2(t.input);
-  const output = num2(t.output);
-  const reasoning = num2(t.reasoning);
-  const cacheRead = num2(t.cache?.read);
-  const cacheWrite = num2(t.cache?.write);
+  const input = num(t.input);
+  const output = num(t.output);
+  const reasoning = num(t.reasoning);
+  const cacheRead = num(t.cache?.read);
+  const cacheWrite = num(t.cache?.write);
   if (input === 0 && output === 0 && reasoning === 0 && cacheRead === 0 && cacheWrite === 0)
     return null;
   return {
@@ -9687,9 +9721,6 @@ function isReplayedEvent(created, startTime) {
 }
 function isLocationMatch(eventLocation, pluginDirectory) {
   return typeof eventLocation === "string" && eventLocation.length > 0 && eventLocation === pluginDirectory;
-}
-function num2(v) {
-  return typeof v === "number" && !Number.isNaN(v) ? v : 0;
 }
 
 // src/chart.ts
@@ -9788,7 +9819,13 @@ var defaultSpawn = (cmd, args, opts) => {
     const child = spawn(plan.file, plan.args, { env: { ...process.env, ...opts?.env ?? {} } });
     child.stdout.on("data", (d) => stdout += d.toString());
     child.stderr.on("data", (d) => stderr += d.toString());
-    const timer = opts?.timeoutMs ? setTimeout(() => child.kill(), opts.timeoutMs) : undefined;
+    const timer = opts?.timeoutMs ? setTimeout(() => {
+      child.kill();
+      if (!settled) {
+        settled = true;
+        resolve({ stdout, stderr, exitCode: null, timedOut: true });
+      }
+    }, opts.timeoutMs) : undefined;
     child.on("error", (err) => {
       if (settled)
         return;
@@ -9812,6 +9849,9 @@ var volcArkcliAdapter = {
   supports: () => true,
   fetch: async (account, home, exec) => {
     const res = await exec("arkcli", ["usage", "plan", "--product", "coding-plan", "--format", "json"], { env: { ...CALLER_ENV, HOME: home, USERPROFILE: home }, timeoutMs: DEFAULT_TIMEOUT_MS });
+    if (res.timedOut) {
+      return errQuota(account, "arkcli 查询超时");
+    }
     if (res.exitCode === null) {
       return errQuota(account, classifyStartupError(res.stderr));
     }
@@ -9849,11 +9889,11 @@ function renderPlanChart(quotas) {
   lines.push(`${col("profile")}  ${col("session")}  ${col("weekly")}  ${col("monthly")}`);
   for (const q of quotas) {
     if (q.error) {
-      lines.push(`${col(pad(q.provider, COL_W))}  ⚠ ${q.error}`);
+      lines.push(`${pad(q.provider, COL_W)}  ⚠ ${q.error}`);
       continue;
     }
     const by = periodByLabel(q.periods);
-    lines.push(`${col(pad(q.provider, COL_W))}  ${col(cell(by.session))}  ${col(cell(by.weekly))}  ${col(cell(by.monthly))}`);
+    lines.push(`${pad(q.provider, COL_W)}  ${col(cell(by.session))}  ${col(cell(by.weekly))}  ${col(cell(by.monthly))}`);
     const resets = [resetCell(by.session), resetCell(by.weekly), resetCell(by.monthly)];
     if (resets.some((r) => r)) {
       lines.push(`${col("")}  ${col(resets[0])}  ${col(resets[1])}  ${col(resets[2])}`);
@@ -9881,7 +9921,7 @@ function parseUsagePlan(profile, stdout) {
   }
   const periods = (item.periods ?? []).filter((p) => typeof p?.label === "string" && p.label.length > 0).map((p) => ({
     label: p.label,
-    percent: num3(p.percent),
+    percent: num(p.percent),
     resetAt: typeof p.reset_at === "string" && p.reset_at.length > 0 ? p.reset_at : undefined
   }));
   return {
@@ -9939,9 +9979,6 @@ function shortDate(iso) {
   const mi = String(d.getMinutes()).padStart(2, "0");
   return `${mm}-${dd} ${hh}:${mi}`;
 }
-function num3(v) {
-  return typeof v === "number" && !Number.isNaN(v) ? v : 0;
-}
 function errMsg(e) {
   return e instanceof Error ? e.message : String(e);
 }
@@ -9989,16 +10026,8 @@ class Logger2 {
     if (ctx) {
       if (ctx.sessionID)
         parts.push(`session=${ctx.sessionID}`);
-      if (ctx.modelID)
-        parts.push(`model=${ctx.modelID}`);
       if (ctx.providerID)
         parts.push(`provider=${ctx.providerID}`);
-      if (ctx.mode)
-        parts.push(`mode=${ctx.mode}`);
-      if (ctx.agent)
-        parts.push(`agent=${ctx.agent}`);
-      if (ctx.durationMs !== undefined)
-        parts.push(`duration=${ctx.durationMs}ms`);
     }
     const line = `${nowStr()} INFO  usage ${parts.join(" ")}
 `;
@@ -10006,7 +10035,7 @@ class Logger2 {
   }
   write(line) {
     if (this.mode === "rotation") {
-      const day = todayLocal2();
+      const day = todayLocal();
       appendFileSync2(join3(this.dir, `plan-mate-${day}.log`), line);
     } else {
       appendFileSync2(this.fixedPath, line);
@@ -10027,11 +10056,6 @@ function nowStr() {
   const d = new Date;
   const p = (n, w = 2) => String(n).padStart(w, "0");
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${p(d.getMilliseconds(), 3)}`;
-}
-function todayLocal2() {
-  const d = new Date;
-  const p = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
 // src/index.ts
@@ -10123,7 +10147,7 @@ var src_default = define({
         }
       };
       for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
-        await handleEvent(event, globalStats, globalLogger, resolveProvider);
+        await safeHandleEvent(() => handleEvent(event, globalStats, globalLogger, resolveProvider));
       }
     })();
     return () => {
@@ -10153,6 +10177,13 @@ async function handleEvent(event, stats, logger, resolveProvider) {
     corrMap.delete(usage.sessionID);
   }
 }
+async function safeHandleEvent(handle) {
+  try {
+    await handle();
+  } catch (err) {
+    console.error("[opencode-plan-mate] 事件处理失败,已跳过该事件:", err);
+  }
+}
 function defaultPath(filename) {
   const xdg = process.env.XDG_DATA_HOME;
   const base = xdg ? join4(xdg, "opencode") : join4(homedir2(), ".local", "share", "opencode");
@@ -10167,5 +10198,6 @@ function globalConfigDir() {
   return xdg ? join4(xdg, "opencode") : join4(homedir2(), ".config", "opencode");
 }
 export {
-  src_default as default
+  src_default as default,
+  safeHandleEvent
 };

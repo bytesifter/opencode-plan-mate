@@ -24,14 +24,14 @@ const okItem = (subscribed = true, periods?: unknown) =>
 
 /** 构造 fake spawn:按 env.HOME 返回预设结果,并记录调用(命令 + env) */
 function fakeExec(
-  results: Record<string, { stdout?: string; stderr?: string; exitCode: number | null }>,
+  results: Record<string, { stdout?: string; stderr?: string; exitCode: number | null; timedOut?: boolean }>,
 ): { exec: SpawnExecutor; calls: { args: string[]; env?: Record<string, string> }[] } {
   const calls: { args: string[]; env?: Record<string, string> }[] = []
   const exec: SpawnExecutor = async (_cmd, args, opts) => {
     calls.push({ args, env: opts.env })
     const home = opts.env?.HOME ?? ""
     const r = results[home] ?? { exitCode: 0, stdout: "{}" }
-    return { stdout: r.stdout ?? "", stderr: r.stderr ?? "", exitCode: r.exitCode }
+    return { stdout: r.stdout ?? "", stderr: r.stderr ?? "", exitCode: r.exitCode, timedOut: r.timedOut }
   }
   return { exec, calls }
 }
@@ -108,6 +108,35 @@ test("arkcli 无法启动(EINVAL)与未安装(ENOENT)分类不同", async () => 
   const quota = await volcArkcliAdapter.fetch("volc-a", "/home/volc-a", exec)
   expect(quota.error).toContain("arkcli 无法启动")
   expect(quota.error).not.toContain("不可用")
+})
+
+// ===== adapter:超时与 ENOENT 区分 =====
+test("timedOut 时错误文案为查询超时,而非 ENOENT 分类", async () => {
+  const { exec } = fakeExec({ "/home/volc-a": { exitCode: null, stderr: "", timedOut: true } })
+  const quota = await volcArkcliAdapter.fetch("volc-a", "/home/volc-a", exec)
+  expect(quota.error).toContain("查询超时")
+  expect(quota.error).not.toContain("无法启动")
+  expect(quota.error).not.toContain("不可用")
+})
+
+test("未超时的 ENOENT 路径分类不变", async () => {
+  const { exec } = fakeExec({ "/home/volc-a": { exitCode: null, stderr: "spawn arkcli ENOENT" } })
+  const quota = await volcArkcliAdapter.fetch("volc-a", "/home/volc-a", exec)
+  expect(quota.error).toContain("arkcli 不可用")
+})
+
+// ===== defaultSpawn:超时标记 =====
+test("defaultSpawn:超过 timeoutMs 被 kill,timedOut 为 true", async () => {
+  const res = await defaultSpawn(process.execPath, ["-e", "setTimeout(() => {}, 10000)"], { timeoutMs: 100 })
+  expect(res.timedOut).toBe(true)
+  expect(res.exitCode).toBeNull()
+})
+
+test("defaultSpawn:正常完成 timedOut 为 falsy", async () => {
+  const res = await defaultSpawn(process.execPath, ["-e", "console.log('hi')"], { timeoutMs: 5000 })
+  expect(res.timedOut ?? false).toBe(false)
+  expect(res.exitCode).toBe(0)
+  expect(res.stdout).toContain("hi")
 })
 
 // ===== buildSpawn:跨平台执行计划 =====

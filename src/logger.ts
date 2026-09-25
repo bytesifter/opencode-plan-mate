@@ -2,6 +2,7 @@ import { appendFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import type { LogLevel, EventContext } from "./types"
 import { ensureDir } from "./fs-util"
+import { todayLocal } from "./util"
 
 /** token 用量(用于 event 层日志) */
 export interface UsageTokens {
@@ -91,11 +92,7 @@ export class Logger {
     ]
     if (ctx) {
       if (ctx.sessionID) parts.push(`session=${ctx.sessionID}`)
-      if (ctx.modelID) parts.push(`model=${ctx.modelID}`)
       if (ctx.providerID) parts.push(`provider=${ctx.providerID}`)
-      if (ctx.mode) parts.push(`mode=${ctx.mode}`)
-      if (ctx.agent) parts.push(`agent=${ctx.agent}`)
-      if (ctx.durationMs !== undefined) parts.push(`duration=${ctx.durationMs}ms`)
     }
     const line = `${nowStr()} INFO  usage ${parts.join(" ")}\n`
     this.write(line)
@@ -128,11 +125,4 @@ function nowStr(): string {
   const d = new Date()
   const p = (n: number, w = 2) => String(n).padStart(w, "0")
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${p(d.getMilliseconds(), 3)}`
-}
-
-/** 本地日期 YYYY-MM-DD(按本地时区) */
-function todayLocal(): string {
-  const d = new Date()
-  const p = (n: number) => String(n).padStart(2, "0")
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
 }

@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process"
 import type { PlanPeriod, PlanQuota, QuotaAdapter, SpawnExecutor, SpawnResult } from "./types"
 import { bar, pad } from "./chart"
+import { num } from "./util"
 
 /** arkcli 子进程超时(毫秒) */
 const DEFAULT_TIMEOUT_MS = 30000
@@ -49,7 +50,16 @@ export const defaultSpawn: SpawnExecutor = (cmd, args, opts) => {
     const child = spawn(plan.file, plan.args, { env: { ...process.env, ...(opts?.env ?? {}) } })
     child.stdout.on("data", (d: Buffer) => (stdout += d.toString()))
     child.stderr.on("data", (d: Buffer) => (stderr += d.toString()))
-    const timer = opts?.timeoutMs ? setTimeout(() => child.kill(), opts.timeoutMs) : undefined
+    const timer = opts?.timeoutMs
+      ? setTimeout(() => {
+          child.kill()
+          // 立即结算:超时无需等待 close(Windows 下 cmd 包装的 grandchild 可能持有 stdout,close 永不触发)
+          if (!settled) {
+            settled = true
+            resolve({ stdout, stderr, exitCode: null, timedOut: true })
+          }
+        }, opts.timeoutMs)
+      : undefined
     child.on("error", (err) => {
       if (settled) return
       settled = true
@@ -60,6 +70,7 @@ export const defaultSpawn: SpawnExecutor = (cmd, args, opts) => {
       if (settled) return
       settled = true
       if (timer) clearTimeout(timer)
+      // 走到 close 说明 timer 未触发(超时路径已在 timer 内同步 resolve),timedOut 恒为 false,无需标记
       resolve({ stdout, stderr, exitCode: code })
     })
   })
@@ -78,6 +89,9 @@ export const volcArkcliAdapter: QuotaAdapter = {
       ["usage", "plan", "--product", "coding-plan", "--format", "json"],
       { env: { ...CALLER_ENV, HOME: home, USERPROFILE: home }, timeoutMs: DEFAULT_TIMEOUT_MS },
     )
+    if (res.timedOut) {
+      return errQuota(account, "arkcli 查询超时")
+    }
     if (res.exitCode === null) {
       return errQuota(account, classifyStartupError(res.stderr))
     }
@@ -136,12 +150,12 @@ export function renderPlanChart(quotas: PlanQuota[]): string {
   lines.push(`${col("profile")}  ${col("session")}  ${col("weekly")}  ${col("monthly")}`)
   for (const q of quotas) {
     if (q.error) {
-      lines.push(`${col(pad(q.provider, COL_W))}  ⚠ ${q.error}`)
+      lines.push(`${pad(q.provider, COL_W)}  ⚠ ${q.error}`)
       continue
     }
     const by = periodByLabel(q.periods)
     lines.push(
-      `${col(pad(q.provider, COL_W))}  ${col(cell(by.session))}  ${col(cell(by.weekly))}  ${col(cell(by.monthly))}`,
+      `${pad(q.provider, COL_W)}  ${col(cell(by.session))}  ${col(cell(by.weekly))}  ${col(cell(by.monthly))}`,
     )
     const resets = [resetCell(by.session), resetCell(by.weekly), resetCell(by.monthly)]
     if (resets.some((r) => r)) {
@@ -244,10 +258,6 @@ function shortDate(iso: string): string {
   const hh = String(d.getHours()).padStart(2, "0")
   const mi = String(d.getMinutes()).padStart(2, "0")
   return `${mm}-${dd} ${hh}:${mi}`
-}
-
-function num(v: unknown): number {
-  return typeof v === "number" && !Number.isNaN(v) ? v : 0
 }
 
 function errMsg(e: unknown): string {

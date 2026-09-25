@@ -88,11 +88,7 @@ test("event 层日志含各分量/cost/业务上下文", () => {
   const l = new Logger(logPath)
   const ctx: EventContext = {
     sessionID: "a3f2",
-    modelID: "glm-5.2",
     providerID: "volxc9208",
-    mode: "code",
-    agent: "opencode",
-    durationMs: 1283,
   }
   l.logUsage(
     { input: 1000, output: 500, reasoning: 50, cache: { read: 30, write: 10 } },
@@ -108,11 +104,7 @@ test("event 层日志含各分量/cost/业务上下文", () => {
   expect(content).toContain("cacheW=10")
   expect(content).toContain("cost=0.05")
   expect(content).toContain("session=a3f2")
-  expect(content).toContain("model=glm-5.2")
   expect(content).toContain("provider=volxc9208")
-  expect(content).toContain("mode=code")
-  expect(content).toContain("agent=opencode")
-  expect(content).toContain("duration=1283ms")
   expect(content).toContain("INFO")
 })
 

@@ -18,6 +18,8 @@ export interface HttpHookCallbacks {
   ) => void
   /** 建立 sessionID-provider 关联(选中 provider 后,请求发出前) */
   onCorrelate?: (sessionID: string, account: string) => void
+  /** 请求体 model 提取器覆盖(测试缝;缺省用默认 extractModel) */
+  extractModel?: (request: Request) => Promise<string | undefined>
 }
 
 /** 429 状态码:Too Many Requests,触发该 provider 熔断 */
@@ -28,6 +30,30 @@ const HTTP_PAYMENT_REQUIRED = 402
 
 /** 请求耗时记录:key 为 sessionID + kind,http.request 记起点,http.response 读取 */
 const startTimes = new Map<string, number>()
+
+/** startTimes 条目最长存活(毫秒):超过视为请求 abort 永不返回,set 时顺带清理 */
+const START_TIME_MAX_AGE_MS = 10 * 60 * 1000
+
+/** startTimes 清理阈值:条目数达到后触发 prune(避免每次请求 O(n) 全表扫描) */
+const START_TIME_PRUNE_THRESHOLD = 64
+
+/**
+ * 清理超过存活阈值的耗时起点条目(纯函数,便于测试)。
+ * 兜底"请求被 abort、永远等不到 response"的泄漏路径,保证 Map 有界。
+ */
+export function pruneStartTimes(entries: Map<string, number>, now: number, maxAgeMs: number = START_TIME_MAX_AGE_MS): void {
+  for (const [k, ts] of entries) {
+    if (now - ts > maxAgeMs) entries.delete(k)
+  }
+}
+
+/** 记录耗时起点,条目数达阈值时顺带清理过期条目(常路径 O(1),Map 有界) */
+function setStartTime(key: string, now: number): void {
+  if (startTimes.size >= START_TIME_PRUNE_THRESHOLD) {
+    pruneStartTimes(startTimes, now)
+  }
+  startTimes.set(key, now)
+}
 
 /**
  * v2 `ctx.session.hook("http.request")` 处理器:按"接入点 + 模型"分组随机选 provider 并替换 Authorization。
@@ -53,13 +79,15 @@ export async function handleHttpRequest(
   const url = event.request.url
   const originalBaseURL = pool.findBaseURL(url)
   if (!originalBaseURL) return
-  const model = await extractModel(event.request)
+  // 同接入点内模型集一致时跳过请求体读取(model 不影响选池结果,避免大 body 全量解析)
+  const extract = callbacks?.extractModel ?? extractModel
+  const model = pool.hasModelVariance(originalBaseURL) ? await extract(event.request) : undefined
   const entry = pool.next(model, originalBaseURL)
   if (!entry) return
   const headers = new Headers(event.request.headers)
   headers.set("Authorization", `Bearer ${entry.key}`)
   event.request = new Request(event.request, { headers })
-  startTimes.set(`${event.sessionID}:${event.kind}`, Date.now())
+  setStartTime(`${event.sessionID}:${event.kind}`, Date.now())
   callbacks?.onCorrelate?.(event.sessionID, entry.account)
 }
 
@@ -84,6 +112,10 @@ export async function handleHttpResponse(
   pool: ProviderPool,
   callbacks?: HttpHookCallbacks,
 ): Promise<void> {
+  const startKey = `${event.sessionID}:${event.kind}`
+  // 无条件清理耗时起点:即使 key 缺失/不匹配池,也删除对应条目(避免 abort/失配请求泄漏)
+  const startMs = startTimes.get(startKey)
+  startTimes.delete(startKey)
   const key = bearerKey(event.request.headers.get("Authorization"))
   if (!key) return
   const entry = pool.entryByKey(key)
@@ -98,10 +130,7 @@ export async function handleHttpResponse(
     pool.markCooldown(key, pool.quotaCooldownMs)
   }
   if (entry) {
-    const startKey = `${event.sessionID}:${event.kind}`
-    const startMs = startTimes.get(startKey) ?? Date.now()
-    startTimes.delete(startKey)
-    callbacks?.onResponse?.(pool, entry, status, Date.now() - startMs, cooldownType)
+    callbacks?.onResponse?.(pool, entry, status, Date.now() - (startMs ?? Date.now()), cooldownType)
   }
 }
 

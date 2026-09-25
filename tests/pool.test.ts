@@ -193,3 +193,38 @@ test("同接入点分组全熔断时返回 null(不跨接入点兜底)", () => {
     expect(pool.next("deepseek-v4-flash", "https://ark.example/coding/v3")).toBeNull()
   }
 })
+
+test("hasModelVariance:同接入点模型集一致返回 false", () => {
+  const entries: ProviderEntry[] = [
+    { key: "k1", baseURL: "https://ark.example/coding/v3", account: "ark1", models: ["glm-5.2", "deepseek-v4-flash"] },
+    { key: "k2", baseURL: "https://ark.example/coding/v3", account: "ark2", models: ["deepseek-v4-flash", "glm-5.2"] },
+  ]
+  const pool = new ProviderPool(entries, 60000)
+  expect(pool.hasModelVariance("https://ark.example/coding/v3")).toBe(false)
+})
+
+test("hasModelVariance:同接入点模型集有差异返回 true", () => {
+  const entries: ProviderEntry[] = [
+    { key: "k1", baseURL: "https://ark.example/coding/v3", account: "ark1", models: ["glm-5.2"] },
+    { key: "k2", baseURL: "https://ark.example/coding/v3", account: "ark2", models: ["glm-5.2", "deepseek-v4-flash"] },
+  ]
+  const pool = new ProviderPool(entries, 60000)
+  expect(pool.hasModelVariance("https://ark.example/coding/v3")).toBe(true)
+})
+
+test("hasModelVariance:未知 baseURL 保守返回 true", () => {
+  const entries: ProviderEntry[] = [
+    { key: "k1", baseURL: "https://ark.example/coding/v3", account: "ark1", models: ["glm-5.2"] },
+  ]
+  const pool = new ProviderPool(entries, 60000)
+  expect(pool.hasModelVariance("https://unconfigured.example/api")).toBe(true)
+})
+
+test("hasModelVariance:空模型集一致视为无差异", () => {
+  const entries: ProviderEntry[] = [
+    { key: "k1", baseURL: "https://ark.example/coding/v3", account: "ark1", models: [] },
+    { key: "k2", baseURL: "https://ark.example/coding/v3", account: "ark2", models: [] },
+  ]
+  const pool = new ProviderPool(entries, 60000)
+  expect(pool.hasModelVariance("https://ark.example/coding/v3")).toBe(false)
+})

@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test"
-import { handleHttpRequest, handleHttpResponse, classify429, bearerKey } from "../src/http-hooks"
+import { handleHttpRequest, handleHttpResponse, classify429, bearerKey, pruneStartTimes } from "../src/http-hooks"
 import { ProviderPool } from "../src/pool"
 import type { ProviderEntry } from "../src/types"
 import type { CooldownType } from "../src/http-hooks"
@@ -120,6 +120,57 @@ test("body 是空串时退化到同接入点池", async () => {
   }
   await handleHttpRequest(event, pool)
   expect(event.request.headers.get("Authorization")).toMatch(/^Bearer (k1|k2)$/)
+})
+
+// ===== extractModel 守卫:模型集一致跳过请求体读取 =====
+test("模型集一致:跳过请求体读取,仍选中 provider", async () => {
+  const entries: ProviderEntry[] = [
+    { key: "k1", baseURL: "https://x.example/coding/v3", account: "account1", models: ["glm-5.2"] },
+    { key: "k2", baseURL: "https://x.example/coding/v3", account: "account2", models: ["glm-5.2"] },
+  ]
+  const pool = makePool(entries)
+  let extractCalls = 0
+  const event = {
+    sessionID: "ses_1",
+    kind: "primary",
+    request: new Request("https://x.example/coding/v3/chat/completions", {
+      method: "POST",
+      body: JSON.stringify({ model: "glm-5.2", messages: [] }),
+    }),
+  }
+  await handleHttpRequest(event, pool, {
+    extractModel: async () => {
+      extractCalls++
+      return "glm-5.2"
+    },
+  })
+  expect(event.request.headers.get("Authorization")).toMatch(/^Bearer (k1|k2)$/)
+  expect(extractCalls).toBe(0)
+})
+
+test("模型集有差异:仍读取请求体提取 model", async () => {
+  const entries: ProviderEntry[] = [
+    { key: "k1", baseURL: "https://x.example/coding/v3", account: "account1", models: ["glm-5.2"] },
+    { key: "k2", baseURL: "https://x.example/coding/v3", account: "account2", models: ["glm-5.2", "deepseek-v4-flash"] },
+  ]
+  const pool = makePool(entries)
+  let extractCalls = 0
+  const event = {
+    sessionID: "ses_1",
+    kind: "primary",
+    request: new Request("https://x.example/coding/v3/chat/completions", {
+      method: "POST",
+      body: JSON.stringify({ model: "glm-5.2", messages: [] }),
+    }),
+  }
+  await handleHttpRequest(event, pool, {
+    extractModel: async () => {
+      extractCalls++
+      return "glm-5.2"
+    },
+  })
+  expect(event.request.headers.get("Authorization")).toMatch(/^Bearer (k1|k2)$/)
+  expect(extractCalls).toBe(1)
 })
 
 // ===== http.response:429/402 熔断 =====
@@ -270,4 +321,37 @@ test("classify429:exceeded+quota 归 quota-exhausted", async () => {
 test("classify429:其他归 rate-limit", async () => {
   expect(await classify429(new Response("plain", { status: 429 }))).toBe("rate-limit")
   expect(await classify429(new Response(JSON.stringify({ error: { message: "too fast" } }), { status: 429 }))).toBe("rate-limit")
+})
+
+// ===== startTimes 泄漏修复 =====
+test("startTimes:响应 key 不匹配池时条目仍被清理", async () => {
+  const pool = makePool(codingEntries)
+  const req = new Request("https://x.example/coding/v3/chat/completions")
+  await handleHttpRequest({ sessionID: "ses_1", kind: "primary", request: req }, pool)
+  await new Promise((r) => setTimeout(r, 30))
+  // 池外 key 的响应:entry miss,不触发 onResponse,但应清理 startTimes
+  await handleHttpResponse(responseEvent("outside-key", new Response("ok", { status: 200 })), pool)
+  // 同 sessionID:kind 的池内响应:若条目已清理,duration≈0;未清理则≥30ms
+  let dur = -1
+  await handleHttpResponse(responseEvent("k1", new Response("ok", { status: 200 })), pool, {
+    onResponse: (_p, _e, _s, d) => {
+      dur = d
+    },
+  })
+  expect(dur).toBeGreaterThanOrEqual(0)
+  expect(dur).toBeLessThan(25)
+})
+
+test("pruneStartTimes:超时条目被清理,新条目与边界条目保留", () => {
+  const now = Date.now()
+  const m = new Map<string, number>([
+    ["stale:primary", now - 11 * 60 * 1000],
+    ["fresh:primary", now - 1000],
+    ["boundary:primary", now - 10 * 60 * 1000],
+  ])
+  pruneStartTimes(m, now)
+  expect(m.has("stale:primary")).toBe(false)
+  expect(m.has("fresh:primary")).toBe(true)
+  // 恰好等于阈值:未超过,保留
+  expect(m.has("boundary:primary")).toBe(true)
 })
