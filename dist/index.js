@@ -9666,6 +9666,7 @@ function resolveStepUsage(event) {
     eventID: typeof e.id === "string" ? e.id : "",
     created: typeof e.created === "number" ? e.created : 0,
     durableKey: durableKeyOf(e),
+    locationDirectory: typeof e.location?.directory === "string" ? e.location.directory : undefined,
     failed: e.type === "session.step.failed",
     sessionID,
     assistantMessageID: typeof data.assistantMessageID === "string" ? data.assistantMessageID : "",
@@ -9683,6 +9684,9 @@ function durableKeyOf(e) {
 }
 function isReplayedEvent(created, startTime) {
   return created > 0 && created < startTime;
+}
+function isLocationMatch(eventLocation, pluginDirectory) {
+  return typeof eventLocation === "string" && eventLocation.length > 0 && eventLocation === pluginDirectory;
 }
 function num2(v) {
   return typeof v === "number" && !Number.isNaN(v) ? v : 0;
@@ -10038,11 +10042,13 @@ var globalLogger = null;
 var globalPool = null;
 var hooksRegistered = false;
 var pluginStartTime = 0;
+var pluginDirectory = "";
 var corrMap = new Map;
 var src_default = define({
   id: "opencode-plan-mate",
   async setup(ctx) {
     pluginStartTime = Date.now();
+    pluginDirectory = ctx.location.directory;
     const opts = parseOptions(ctx.options);
     if (!globalStats) {
       const statsDir = opts.statsDir ?? defaultPath("plan-mate-stats");
@@ -10129,6 +10135,8 @@ var src_default = define({
 async function handleEvent(event, stats, logger, resolveProvider) {
   const usage = resolveStepUsage(event);
   if (!usage)
+    return;
+  if (!isLocationMatch(usage.locationDirectory, pluginDirectory))
     return;
   if (isReplayedEvent(usage.created, pluginStartTime))
     return;

@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test"
-import { resolveStepUsage, attributeStep, isReplayedEvent, TERMINAL_FINISH } from "../src/event-adapter"
+import { resolveStepUsage, attributeStep, isReplayedEvent, isLocationMatch, TERMINAL_FINISH } from "../src/event-adapter"
 
 function stepEvent(overrides: Record<string, unknown> = {}) {
   return {
@@ -24,6 +24,7 @@ test("session.step.ended 解析为归一化单步用量", () => {
   expect(u!.eventID).toBe("evt_step1")
   expect(u!.created).toBe(12345)
   expect(u!.durableKey).toBe("evt_step1") // 无 durable 时 fallback 到 event.id
+  expect(u!.locationDirectory).toBe("D:\\code\\demo")
   expect(u!.failed).toBe(false)
   expect(u!.sessionID).toBe("sess_abc")
   expect(u!.assistantMessageID).toBe("msg_1")
@@ -54,6 +55,24 @@ test("durable 与 event.id 皆缺时 durableKey 为空串", () => {
 test("created 缺失时解析为 0", () => {
   const u = resolveStepUsage(stepEvent({ created: undefined }))
   expect(u!.created).toBe(0)
+})
+
+test("location 缺失时 locationDirectory 为 undefined", () => {
+  const u = resolveStepUsage(stepEvent({ location: undefined }))
+  expect(u!.locationDirectory).toBeUndefined()
+})
+
+test("isLocationMatch:位置匹配返回 true", () => {
+  expect(isLocationMatch("D:\\code\\demo", "D:\\code\\demo")).toBe(true)
+})
+
+test("isLocationMatch:位置不匹配返回 false", () => {
+  expect(isLocationMatch("D:\\code\\other", "D:\\code\\demo")).toBe(false)
+})
+
+test("isLocationMatch:事件缺 location 返回 false", () => {
+  expect(isLocationMatch(undefined, "D:\\code\\demo")).toBe(false)
+  expect(isLocationMatch("", "D:\\code\\demo")).toBe(false)
 })
 
 test("session.step.ended 中间态 tool-calls 解析,不视为失败", () => {

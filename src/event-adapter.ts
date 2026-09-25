@@ -16,6 +16,8 @@ export interface StepUsage {
   created: number
   /** durable 事件身份(`aggregateID:seq`),缺 durable 时 fallback 到 eventID,两者皆缺为空串(不去重) */
   durableKey: string
+  /** 事件归属位置目录(event.location.directory),用于按位置过滤(多位置实例互不干扰) */
+  locationDirectory?: string
   /** 事件类型:true 表示 session.step.failed(step 出错),否则为 session.step.ended */
   failed: boolean
   sessionID: string
@@ -84,6 +86,7 @@ export function resolveStepUsage(event: unknown): StepUsage | null {
       cost?: unknown
     }
     durable?: { aggregateID?: unknown; seq?: unknown }
+    location?: { directory?: unknown }
   }
   if (typeof e.type !== "string" || !USAGE_EVENT_TYPES.has(e.type)) return null
   const data = e.data
@@ -107,6 +110,7 @@ export function resolveStepUsage(event: unknown): StepUsage | null {
     eventID: typeof e.id === "string" ? e.id : "",
     created: typeof e.created === "number" ? e.created : 0,
     durableKey: durableKeyOf(e),
+    locationDirectory: typeof e.location?.directory === "string" ? e.location.directory : undefined,
     failed: e.type === "session.step.failed",
     sessionID,
     assistantMessageID: typeof data.assistantMessageID === "string" ? data.assistantMessageID : "",
@@ -144,6 +148,24 @@ function durableKeyOf(e: {
  */
 export function isReplayedEvent(created: number, startTime: number): boolean {
   return created > 0 && created < startTime
+}
+
+/**
+ * 位置匹配判定:事件归属位置目录与插件加载位置目录一致时才处理。
+ *
+ * 背景(见 specs/usage-tracking 按位置过滤):
+ * GUI 多位置各加载一份插件实例,`ctx.event.subscribe` 是全局事件流,
+ * 每个实例都会收到所有会话的事件——必须按位置过滤,让每个实例只处理
+ * 自己位置(目录)的会话,消除跨实例重复计数。
+ *
+ * `eventLocation` 缺失(无法确定归属)时返回 false,保守丢弃。
+ *
+ * @param eventLocation - 事件归属位置目录(`event.location.directory`,可能缺失)
+ * @param pluginDirectory - 插件加载位置目录(`ctx.location.directory`)
+ * @returns true 表示事件属于本插件实例的位置,应处理
+ */
+export function isLocationMatch(eventLocation: string | undefined, pluginDirectory: string): boolean {
+  return typeof eventLocation === "string" && eventLocation.length > 0 && eventLocation === pluginDirectory
 }
 
 /** 容错数值转换:非数字归零 */

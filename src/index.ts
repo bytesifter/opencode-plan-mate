@@ -5,7 +5,7 @@ import { parseOptions, collectProviders, loadProviderConfig, configFileCandidate
 import { ProviderPool } from "./pool"
 import { handleHttpRequest, handleHttpResponse, type HttpHookCallbacks } from "./http-hooks"
 import { StatsCollector, aggregateStats } from "./stats"
-import { resolveStepUsage, attributeStep, isReplayedEvent } from "./event-adapter"
+import { resolveStepUsage, attributeStep, isReplayedEvent, isLocationMatch } from "./event-adapter"
 import { renderChart } from "./chart"
 import { collectPlanQuotas, defaultSpawn, renderPlanChart } from "./quota"
 import { Logger, tail } from "./logger"
@@ -24,6 +24,9 @@ let hooksRegistered = false
 /** 插件启动时刻:回放过滤依据(忽略 created 早于该时刻的历史 durable 事件) */
 let pluginStartTime = 0
 
+/** 插件加载位置目录:按位置过滤依据(多位置实例各处理自己的会话) */
+let pluginDirectory = ""
+
 /** sessionID → provider 关联(http.request 钩子建立,事件层 token 归因使用) */
 const corrMap = new Map<string, string>()
 
@@ -39,6 +42,7 @@ export default Plugin.define({
   id: "opencode-plan-mate",
   async setup(ctx) {
     pluginStartTime = Date.now()
+    pluginDirectory = ctx.location.directory
     const opts = parseOptions(ctx.options as Record<string, unknown> | undefined)
 
     if (!globalStats) {
@@ -152,6 +156,8 @@ async function handleEvent(
 ): Promise<void> {
   const usage = resolveStepUsage(event)
   if (!usage) return
+  // 按位置过滤:只处理本插件实例位置的会话事件(多位置实例互不干扰,消除跨实例重复)
+  if (!isLocationMatch(usage.locationDirectory, pluginDirectory)) return
   // 回放过滤:忽略 created 早于插件启动时刻的历史 durable 事件回放(created 缺失视为实时)
   if (isReplayedEvent(usage.created, pluginStartTime)) return
   const { provider, cleanup } = await attributeStep(usage, corrMap, resolveProvider)
