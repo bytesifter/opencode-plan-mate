@@ -2,7 +2,7 @@
 function define(plugin) {
   return plugin;
 }
-// node_modules/@opencode/schema/node_modules/effect/dist/Pipeable.js
+// node_modules/effect/dist/Pipeable.js
 var pipeArguments = (self, args) => {
   switch (args.length) {
     case 0:
@@ -45,7 +45,7 @@ var Class = /* @__PURE__ */ function() {
   return PipeableBase;
 }();
 
-// node_modules/@opencode/schema/node_modules/effect/dist/Function.js
+// node_modules/effect/dist/Function.js
 var dual = function(arity, body) {
   if (typeof arity === "function") {
     return function() {
@@ -114,7 +114,7 @@ function memoizeIdempotent(f) {
   };
 }
 
-// node_modules/@opencode/schema/node_modules/effect/dist/internal/equal.js
+// node_modules/effect/dist/internal/equal.js
 var getAllObjectKeys = (obj) => {
   const keys = new Set(Reflect.ownKeys(obj));
   if (obj.constructor === Object)
@@ -138,7 +138,7 @@ var getAllObjectKeys = (obj) => {
 };
 var byReferenceInstances = /* @__PURE__ */ new WeakSet;
 
-// node_modules/@opencode/schema/node_modules/effect/dist/Predicate.js
+// node_modules/effect/dist/Predicate.js
 function isString(input) {
   return typeof input === "string";
 }
@@ -177,7 +177,7 @@ function isError(input) {
   return input instanceof Error;
 }
 
-// node_modules/@opencode/schema/node_modules/effect/dist/Hash.js
+// node_modules/effect/dist/Hash.js
 var symbol = "~effect/interfaces/Hash";
 var hash = (self) => {
   switch (typeof self) {
@@ -301,7 +301,7 @@ function withVisitedTracking(obj, fn) {
   return result;
 }
 
-// node_modules/@opencode/schema/node_modules/effect/dist/Equal.js
+// node_modules/effect/dist/Equal.js
 var symbol2 = "~effect/interfaces/Equal";
 function equals() {
   if (arguments.length === 1) {
@@ -498,7 +498,7 @@ function makeCompareSet(equivalence) {
 var compareSets = /* @__PURE__ */ makeCompareSet(compareBoth);
 var isEqual = (u) => hasProperty(u, symbol2);
 
-// node_modules/@opencode/schema/node_modules/effect/dist/Redactable.js
+// node_modules/effect/dist/Redactable.js
 var symbolRedactable = /* @__PURE__ */ Symbol.for("~effect/Redactable");
 var isRedactable = (u) => hasProperty(u, symbolRedactable);
 function redact(u) {
@@ -521,7 +521,7 @@ var emptyContext = {
   }
 };
 
-// node_modules/@opencode/schema/node_modules/effect/dist/Formatter.js
+// node_modules/effect/dist/Formatter.js
 function format(input, options) {
   const space = options?.space ?? 0;
   const ancestors = new WeakSet;
@@ -625,7 +625,7 @@ function formatJson(input, options) {
   }, options?.space) ?? "null";
 }
 
-// node_modules/@opencode/schema/node_modules/effect/dist/Inspectable.js
+// node_modules/effect/dist/Inspectable.js
 var NodeInspectSymbol = /* @__PURE__ */ Symbol.for("nodejs.util.inspect.custom");
 var toJson = (input) => {
   try {
@@ -652,7 +652,7 @@ var BaseProto = {
   }
 };
 
-// node_modules/@opencode/schema/node_modules/effect/dist/Utils.js
+// node_modules/effect/dist/Utils.js
 class SingleShotGen {
   called = false;
   self;
@@ -691,7 +691,7 @@ var pickInternalCall = () => {
 };
 var internalCall = /* @__PURE__ */ pickInternalCall();
 
-// node_modules/@opencode/schema/node_modules/effect/dist/internal/record.js
+// node_modules/effect/dist/internal/record.js
 function assignProperty(self, key, value) {
   if (key === "__proto__") {
     Object.defineProperty(self, key, {
@@ -712,7 +712,7 @@ function assignProperties(self, source) {
   }
 }
 
-// node_modules/@opencode/schema/node_modules/effect/dist/internal/core.js
+// node_modules/effect/dist/internal/core.js
 var EffectTypeId = `~effect/Effect`;
 var ExitTypeId = `~effect/Exit`;
 var effectVariance = {
@@ -1054,18 +1054,18 @@ var DoneVoid = {
   value: undefined
 };
 
-// node_modules/@opencode/schema/node_modules/effect/dist/Effectable.js
+// node_modules/effect/dist/Effectable.js
 var Prototype2 = (options) => makePrimitiveProto({
   op: options.label,
   [evaluate]: options.evaluate
 });
 
-// node_modules/@opencode/schema/node_modules/effect/dist/Equivalence.js
+// node_modules/effect/dist/Equivalence.js
 var make = (isEquivalent) => (self, that) => self === that || isEquivalent(self, that);
 var isStrictEquivalent = (x, y) => x === y;
 var strictEqual = () => isStrictEquivalent;
 
-// node_modules/@opencode/schema/node_modules/effect/dist/internal/option.js
+// node_modules/effect/dist/internal/option.js
 var TypeId = "~effect/data/Option";
 var CommonProto = {
   [TypeId]: {
@@ -1131,7 +1131,7 @@ var some = (value) => {
   return a;
 };
 
-// node_modules/@opencode/schema/node_modules/effect/dist/internal/result.js
+// node_modules/effect/dist/internal/result.js
 var TypeId2 = "~effect/data/Result";
 var CommonProto2 = {
   [TypeId2]: {
@@ -1197,7 +1197,7 @@ var succeed = (success) => {
   return a;
 };
 
-// node_modules/@opencode/schema/node_modules/effect/dist/Order.js
+// node_modules/effect/dist/Order.js
 function make2(compare) {
   return (self, that) => self === that ? 0 : compare(self, that);
 }
@@ -1215,7 +1215,7 @@ var isGreaterThan = (O) => dual(2, (self, that) => O(self, that) === 1);
 var isLessThanOrEqualTo = (O) => dual(2, (self, that) => O(self, that) !== 1);
 var isGreaterThanOrEqualTo = (O) => dual(2, (self, that) => O(self, that) !== -1);
 
-// node_modules/@opencode/schema/node_modules/effect/dist/Option.js
+// node_modules/effect/dist/Option.js
 var none2 = () => none;
 var some2 = some;
 var isNone2 = isNone;
@@ -1234,7 +1234,7 @@ var liftThrowable = (f) => (...a) => {
 var map = /* @__PURE__ */ dual(2, (self, f) => isNone2(self) ? none2() : some2(f(self.value)));
 var filter = /* @__PURE__ */ dual(2, (self, predicate) => isNone2(self) ? none2() : predicate(self.value) ? some2(self.value) : none2());
 
-// node_modules/@opencode/schema/node_modules/effect/dist/Context.js
+// node_modules/effect/dist/Context.js
 var ServiceTypeId = "~effect/Context/Service";
 var Service = function() {
   function KeyClass() {}
@@ -1420,10 +1420,10 @@ var serviceNotFoundError = (service) => {
 };
 var Reference = Service;
 
-// node_modules/@opencode/schema/node_modules/effect/dist/internal/array.js
+// node_modules/effect/dist/internal/array.js
 var isArrayNonEmpty = (self) => self.length > 0;
 
-// node_modules/@opencode/schema/node_modules/effect/dist/Result.js
+// node_modules/effect/dist/Result.js
 var succeed2 = succeed;
 var fail2 = fail;
 var isFailure2 = isFailure;
@@ -1432,7 +1432,7 @@ var match2 = /* @__PURE__ */ dual(2, (self, {
   onSuccess
 }) => isFailure2(self) ? onFailure(self.failure) : onSuccess(self.success));
 
-// node_modules/@opencode/schema/node_modules/effect/dist/Array.js
+// node_modules/effect/dist/Array.js
 var Array2 = globalThis.Array;
 var fromIterable = (collection) => Array2.isArray(collection) ? collection : Array2.from(collection);
 var append = /* @__PURE__ */ dual(2, (self, last) => [...self, last]);
@@ -1480,7 +1480,7 @@ var dedupe = (self) => {
   return out;
 };
 
-// node_modules/@opencode/schema/node_modules/effect/dist/Scheduler.js
+// node_modules/effect/dist/Scheduler.js
 var Scheduler = /* @__PURE__ */ Reference("effect/Scheduler", {
   fiberCached: true,
   defaultValue: () => new MixedScheduler
@@ -1590,7 +1590,7 @@ var PreventSchedulerYield = /* @__PURE__ */ Reference("effect/Scheduler/PreventS
   defaultValue: () => false
 });
 
-// node_modules/@opencode/schema/node_modules/effect/dist/Data.js
+// node_modules/effect/dist/Data.js
 var Class2 = class extends Class {
   constructor(props) {
     super();
@@ -1601,7 +1601,7 @@ var Class2 = class extends Class {
 };
 var TaggedError2 = TaggedError;
 
-// node_modules/@opencode/schema/node_modules/effect/dist/Encoding.js
+// node_modules/effect/dist/Encoding.js
 var EncodingErrorTypeId = "~effect/encoding/EncodingError";
 
 class EncodingError extends (/* @__PURE__ */ TaggedError2("EncodingError")) {
@@ -1689,14 +1689,14 @@ for (let i = 0;i < 256; i++) {
   byteToHex.push(i.toString(16).padStart(2, "0"));
 }
 
-// node_modules/@opencode/schema/node_modules/effect/dist/Tracer.js
+// node_modules/effect/dist/Tracer.js
 var ParentSpanKey = "effect/Tracer/ParentSpan";
 var TracerKey = "effect/Tracer";
 
-// node_modules/@opencode/schema/node_modules/effect/dist/internal/metric.js
+// node_modules/effect/dist/internal/metric.js
 var FiberRuntimeMetricsKey = "effect/observability/Metric/FiberRuntimeMetricsKey";
 
-// node_modules/@opencode/schema/node_modules/effect/dist/internal/references.js
+// node_modules/effect/dist/internal/references.js
 var CurrentStackFrame = /* @__PURE__ */ Reference("effect/References/CurrentStackFrame", {
   fiberCached: true,
   defaultValue: constUndefined
@@ -1710,7 +1710,7 @@ var MinimumLogLevel = /* @__PURE__ */ Reference("effect/References/MinimumLogLev
   defaultValue: () => "Info"
 });
 
-// node_modules/@opencode/schema/node_modules/effect/dist/internal/effect.js
+// node_modules/effect/dist/internal/effect.js
 class Interrupt extends ReasonBase {
   fiberId;
   constructor(fiberId, annotations = constEmptyAnnotations) {
@@ -2621,19 +2621,19 @@ var logLevelColors = {
   Fatal: [colors.bgBrightRed, colors.black]
 };
 
-// node_modules/@opencode/schema/node_modules/effect/dist/Exit.js
+// node_modules/effect/dist/Exit.js
 var succeed4 = exitSucceed;
 var failCause2 = exitFailCause;
 var fail4 = exitFail;
 var void_2 = exitVoid;
 var isSuccess3 = exitIsSuccess;
 
-// node_modules/@opencode/schema/node_modules/effect/dist/Cause.js
+// node_modules/effect/dist/Cause.js
 var isFailReason2 = isFailReason;
 var map5 = causeMap;
 var IllegalArgumentError2 = IllegalArgumentError;
 
-// node_modules/@opencode/schema/node_modules/effect/dist/internal/dateTime.js
+// node_modules/effect/dist/internal/dateTime.js
 var TypeId4 = "~effect/time/DateTime";
 var TimeZoneTypeId = "~effect/time/DateTime/TimeZone";
 var Proto2 = {
@@ -2831,11 +2831,11 @@ var formatIsoOffset = (self) => {
 };
 var formatIsoZoned = (self) => self.zone._tag === "Offset" ? formatIsoOffset(self) : `${formatIsoOffset(self)}[${self.zone.id}]`;
 
-// node_modules/@opencode/schema/node_modules/effect/dist/String.js
+// node_modules/effect/dist/String.js
 var String2 = globalThis.String;
 var trim = (self) => self.trim();
 
-// node_modules/@opencode/schema/node_modules/effect/dist/Effect.js
+// node_modules/effect/dist/Effect.js
 var tryPromise2 = tryPromise;
 var succeed5 = succeed3;
 var succeedNone2 = succeedNone;
@@ -2853,7 +2853,7 @@ var mapErrorEager2 = mapErrorEager;
 var flatMapEager2 = flatMapEager;
 var fnUntracedEager2 = fnUntracedEager;
 
-// node_modules/@opencode/schema/node_modules/effect/dist/DateTime.js
+// node_modules/effect/dist/DateTime.js
 var isDateTime2 = isDateTime;
 var isUtc2 = isUtc;
 var Equivalence2 = Equivalence;
@@ -2865,7 +2865,7 @@ var toUtc2 = toUtc;
 var toDateUtc2 = toDateUtc;
 var toEpochMillis2 = toEpochMillis;
 var formatIso2 = formatIso;
-// node_modules/@opencode/schema/node_modules/effect/dist/internal/schema/annotations.js
+// node_modules/effect/dist/internal/schema/annotations.js
 function resolve(ast) {
   return ast.checks ? ast.checks[ast.checks.length - 1].annotations : ast.annotations;
 }
@@ -2877,7 +2877,7 @@ var SENTINELS_ANNOTATION_KEY = "~sentinels";
 var CONSTRUCTOR_ANNOTATION_KEY = "~constructor";
 var resolveBrands = /* @__PURE__ */ resolveAt("brands");
 
-// node_modules/@opencode/schema/node_modules/effect/dist/internal/schema/parser.js
+// node_modules/effect/dist/internal/schema/parser.js
 var missing = /* @__PURE__ */ Symbol();
 var succeed6 = succeed4;
 var missingExit = /* @__PURE__ */ succeed6(missing);
@@ -2885,7 +2885,7 @@ var sameExit = /* @__PURE__ */ succeed6(missing);
 var toOption = (value) => value === missing ? none2() : some2(value);
 var fromOptionExit = (option) => option._tag === "None" ? missingExit : succeed6(option.value);
 
-// node_modules/@opencode/schema/node_modules/effect/dist/SchemaIssue.js
+// node_modules/effect/dist/SchemaIssue.js
 var TypeId5 = "~effect/SchemaIssue/Issue";
 function isIssue(u) {
   return hasProperty(u, TypeId5) && u[TypeId5] === TypeId5;
@@ -3032,7 +3032,7 @@ function normalizeFilterOutput(ast, out, input, options) {
   return makeSingle(out, input, options);
 }
 
-// node_modules/@opencode/schema/node_modules/effect/dist/internal/schema/cause.js
+// node_modules/effect/dist/internal/schema/cause.js
 function getSchemaIssue(cause) {
   let issue;
   for (const reason of cause.reasons) {
@@ -3053,7 +3053,7 @@ function getSchemaIssueOrThrow(cause, message) {
   return issue;
 }
 
-// node_modules/@opencode/schema/node_modules/effect/dist/SchemaGetter.js
+// node_modules/effect/dist/SchemaGetter.js
 class Getter extends Class {
   run;
   constructor(run) {
@@ -3116,7 +3116,7 @@ function decodeBase642() {
   }, input, options)));
 }
 
-// node_modules/@opencode/schema/node_modules/effect/dist/SchemaTransformation.js
+// node_modules/effect/dist/SchemaTransformation.js
 var TypeId6 = "~effect/SchemaTransformation/Transformation";
 
 class Transformation {
@@ -3231,7 +3231,7 @@ var dateTimeUtcFromString = /* @__PURE__ */ transformOrFail2({
   encode: (utc) => succeed5(formatIso2(utc))
 });
 
-// node_modules/@opencode/schema/node_modules/effect/dist/SchemaAST.js
+// node_modules/effect/dist/SchemaAST.js
 function makeGuard(tag) {
   return (ast) => ast._tag === tag;
 }
@@ -4934,7 +4934,7 @@ var StringTree = /* @__PURE__ */ new Declaration([], () => (input, ast, options)
 });
 var unknownToStringTree = /* @__PURE__ */ new Link(StringTree, /* @__PURE__ */ passthrough2());
 
-// node_modules/@opencode/schema/node_modules/effect/dist/SchemaParser.js
+// node_modules/effect/dist/SchemaParser.js
 function makeEffect(schema) {
   const parser = runWithCompiler(constructorCompiler, toType(schema.ast));
   return (input, options) => {
@@ -5144,7 +5144,7 @@ function makeParser(ast, compile, compileConstructorDefault, constructorDefault)
   };
 }
 
-// node_modules/@opencode/schema/node_modules/effect/dist/internal/schema/schema.js
+// node_modules/effect/dist/internal/schema/schema.js
 var TypeId8 = "~effect/Schema/Schema";
 var SchemaProto = {
   [TypeId8]: TypeId8,
@@ -5174,7 +5174,7 @@ function make8(ast, options) {
   return self;
 }
 
-// node_modules/@opencode/schema/node_modules/effect/dist/Struct.js
+// node_modules/effect/dist/Struct.js
 var omit = /* @__PURE__ */ dual(2, (self, keys) => {
   return buildStruct(self, (k, v) => !keys.includes(k) ? [k, v] : undefined);
 });
@@ -5193,7 +5193,7 @@ function buildStruct(source, f) {
   return out;
 }
 
-// node_modules/@opencode/schema/node_modules/effect/dist/internal/schema/toEquivalence.js
+// node_modules/effect/dist/internal/schema/toEquivalence.js
 var toEquivalence = /* @__PURE__ */ memoize((ast) => {
   return recur(ast, []);
 });
@@ -5317,11 +5317,11 @@ function recur(ast, path) {
   }
 }
 
-// node_modules/@opencode/schema/node_modules/effect/dist/RegExp.js
+// node_modules/effect/dist/RegExp.js
 var RegExp2 = globalThis.RegExp;
 var escape = (string) => string.replace(/[/\\^$*+?.()|[\]{}]/g, "\\$&");
 
-// node_modules/@opencode/schema/node_modules/effect/dist/Schema.js
+// node_modules/effect/dist/Schema.js
 var TypeId9 = TypeId8;
 function declareConstructor() {
   return (typeParameters, run, annotations) => {
@@ -9452,44 +9452,60 @@ function ensureDir(dir) {
 }
 
 // src/stats.ts
-var TERMINAL_FINISH = new Set(["stop", "error", "unknown"]);
 var DEFAULT_FLUSH_MS = 60000;
+var DEFAULT_MAX_SEEN_EVENTS = 5000;
+var SEEN_EVENT_MAX_AGE_MS = 10 * 60 * 1000;
 
 class StatsCollector {
   store = {};
   pending = {};
   dir;
   flushMs;
+  maxSeenEvents;
   timer;
-  lastTokens = new Map;
+  seenEvents = new Map;
   constructor(dir, opts = {}) {
     this.dir = dir;
     this.flushMs = opts.flushMs ?? DEFAULT_FLUSH_MS;
+    this.maxSeenEvents = opts.maxSeenEvents ?? DEFAULT_MAX_SEEN_EVENTS;
     ensureDir(this.dir);
     if (opts.registerExitHooks !== false) {
       this.timer = setInterval(() => this.flush(), this.flushMs);
       process.on("beforeExit", this.onBeforeExit);
     }
   }
-  recordUsage(info, provider) {
-    if (!info.id || !info.tokens)
+  recordUsage(info, provider, dedupeKey) {
+    if (!info.tokens)
       return false;
-    const snapshot = {
-      input: num(info.tokens.input),
-      output: num(info.tokens.output),
-      reasoning: num(info.tokens.reasoning),
-      cacheRead: num(info.tokens.cache.read),
-      cacheWrite: num(info.tokens.cache.write)
-    };
+    const snapshot = toSnapshot(info.tokens);
     if (isAllZero(snapshot))
       return false;
-    const prev = this.lastTokens.get(info.id);
-    if (prev && sameSnapshot(prev, snapshot)) {
-      return false;
+    if (dedupeKey) {
+      if (this.seenEvents.has(dedupeKey))
+        return false;
+      this.remember(dedupeKey);
     }
     this.commitToStore(info, provider);
-    this.lastTokens.set(info.id, snapshot);
     return true;
+  }
+  remember(eventID) {
+    const now = Date.now();
+    if (this.seenEvents.size >= this.maxSeenEvents) {
+      this.pruneSeen(now);
+    }
+    this.seenEvents.set(eventID, now);
+  }
+  pruneSeen(now) {
+    for (const [id, ts] of this.seenEvents) {
+      if (now - ts > SEEN_EVENT_MAX_AGE_MS)
+        this.seenEvents.delete(id);
+    }
+    while (this.seenEvents.size >= this.maxSeenEvents) {
+      const oldest = this.seenEvents.keys().next().value;
+      if (oldest === undefined)
+        break;
+      this.seenEvents.delete(oldest);
+    }
   }
   commitToStore(info, provider) {
     if (!info.tokens)
@@ -9536,11 +9552,17 @@ class StatsCollector {
 function newProviderStats() {
   return { req: 0, in: 0, out: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, cost: 0 };
 }
-function sameSnapshot(a, b) {
-  return a.input === b.input && a.output === b.output && a.reasoning === b.reasoning && a.cacheRead === b.cacheRead && a.cacheWrite === b.cacheWrite;
-}
 function isAllZero(s) {
   return s.input === 0 && s.output === 0 && s.reasoning === 0 && s.cacheRead === 0 && s.cacheWrite === 0;
+}
+function toSnapshot(tokens) {
+  return {
+    input: num(tokens.input),
+    output: num(tokens.output),
+    reasoning: num(tokens.reasoning),
+    cacheRead: num(tokens.cache.read),
+    cacheWrite: num(tokens.cache.write)
+  };
 }
 function num(v) {
   return typeof v === "number" && !Number.isNaN(v) ? v : 0;
@@ -9608,6 +9630,62 @@ function aggregateStats(dir, days) {
     }
   }
   return out;
+}
+
+// src/event-adapter.ts
+var USAGE_EVENT_TYPES = new Set(["session.step.ended", "session.step.failed"]);
+var TERMINAL_FINISH = new Set(["stop", "error", "unknown"]);
+async function attributeStep(usage, corrMap, resolveProvider) {
+  const mapped = corrMap.get(usage.sessionID);
+  const provider = mapped ?? await resolveProvider(usage.sessionID) ?? "unknown";
+  const cleanup = usage.failed || !!usage.finish && TERMINAL_FINISH.has(usage.finish);
+  return { provider, cleanup };
+}
+function resolveStepUsage(event) {
+  if (typeof event !== "object" || event === null)
+    return null;
+  const e = event;
+  if (typeof e.type !== "string" || !USAGE_EVENT_TYPES.has(e.type))
+    return null;
+  const data = e.data;
+  if (typeof data !== "object" || data === null)
+    return null;
+  const sessionID = data.sessionID;
+  const tokens = data.tokens;
+  if (typeof sessionID !== "string" || typeof tokens !== "object" || tokens === null)
+    return null;
+  const t = tokens;
+  const input = num2(t.input);
+  const output = num2(t.output);
+  const reasoning = num2(t.reasoning);
+  const cacheRead = num2(t.cache?.read);
+  const cacheWrite = num2(t.cache?.write);
+  if (input === 0 && output === 0 && reasoning === 0 && cacheRead === 0 && cacheWrite === 0)
+    return null;
+  return {
+    eventID: typeof e.id === "string" ? e.id : "",
+    created: typeof e.created === "number" ? e.created : 0,
+    durableKey: durableKeyOf(e),
+    failed: e.type === "session.step.failed",
+    sessionID,
+    assistantMessageID: typeof data.assistantMessageID === "string" ? data.assistantMessageID : "",
+    finish: typeof data.finish === "string" ? data.finish : undefined,
+    tokens: { input, output, reasoning, cache: { read: cacheRead, write: cacheWrite } },
+    cost: typeof data.cost === "number" ? data.cost : undefined
+  };
+}
+function durableKeyOf(e) {
+  const d = e.durable;
+  if (d && typeof d.aggregateID === "string" && d.aggregateID.length > 0 && typeof d.seq === "number") {
+    return `${d.aggregateID}:${d.seq}`;
+  }
+  return typeof e.id === "string" && e.id.length > 0 ? e.id : "";
+}
+function isReplayedEvent(created, startTime) {
+  return created > 0 && created < startTime;
+}
+function num2(v) {
+  return typeof v === "number" && !Number.isNaN(v) ? v : 0;
 }
 
 // src/chart.ts
@@ -9799,7 +9877,7 @@ function parseUsagePlan(profile, stdout) {
   }
   const periods = (item.periods ?? []).filter((p) => typeof p?.label === "string" && p.label.length > 0).map((p) => ({
     label: p.label,
-    percent: num2(p.percent),
+    percent: num3(p.percent),
     resetAt: typeof p.reset_at === "string" && p.reset_at.length > 0 ? p.reset_at : undefined
   }));
   return {
@@ -9857,7 +9935,7 @@ function shortDate(iso) {
   const mi = String(d.getMinutes()).padStart(2, "0");
   return `${mm}-${dd} ${hh}:${mi}`;
 }
-function num2(v) {
+function num3(v) {
   return typeof v === "number" && !Number.isNaN(v) ? v : 0;
 }
 function errMsg(e) {
@@ -9959,10 +10037,12 @@ var globalStatsDir = null;
 var globalLogger = null;
 var globalPool = null;
 var hooksRegistered = false;
+var pluginStartTime = 0;
 var corrMap = new Map;
 var src_default = define({
   id: "opencode-plan-mate",
   async setup(ctx) {
+    pluginStartTime = Date.now();
     const opts = parseOptions(ctx.options);
     if (!globalStats) {
       const statsDir = opts.statsDir ?? defaultPath("plan-mate-stats");
@@ -10028,8 +10108,16 @@ var src_default = define({
     });
     const controller = new AbortController;
     (async () => {
+      const resolveProvider = async (sessionID) => {
+        try {
+          const session = await ctx.session.get({ sessionID });
+          return session?.model?.providerID;
+        } catch {
+          return;
+        }
+      };
       for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
-        handleEvent(event, globalStats, globalLogger);
+        await handleEvent(event, globalStats, globalLogger, resolveProvider);
       }
     })();
     return () => {
@@ -10038,27 +10126,23 @@ var src_default = define({
     };
   }
 });
-function handleEvent(event, stats, logger) {
-  const e = event;
-  if (e.type !== "message.updated" || !e.properties?.info)
+async function handleEvent(event, stats, logger, resolveProvider) {
+  const usage = resolveStepUsage(event);
+  if (!usage)
     return;
-  const info = e.properties.info;
-  const provider = info.sessionID && corrMap.get(info.sessionID) || info.providerID || "unknown";
-  const committed = stats.recordUsage(info, provider);
+  if (isReplayedEvent(usage.created, pluginStartTime))
+    return;
+  const { provider, cleanup } = await attributeStep(usage, corrMap, resolveProvider);
+  const committed = stats.recordUsage({ id: usage.eventID, finish: usage.finish, tokens: usage.tokens, cost: usage.cost }, provider, usage.durableKey);
   if (committed) {
     const c = {
-      sessionID: info.sessionID ? info.sessionID.slice(0, 8) : undefined,
-      modelID: info.modelID,
-      providerID: provider,
-      mode: info.mode,
-      agent: info.agent,
-      durationMs: typeof info.time?.created === "number" && typeof info.time?.completed === "number" ? info.time.completed - info.time.created : 0
+      sessionID: usage.sessionID.slice(0, 8),
+      providerID: provider
     };
-    logger.logUsage(info.tokens, typeof info.cost === "number" ? info.cost : 0, c);
+    logger.logUsage(usage.tokens, typeof usage.cost === "number" ? usage.cost : 0, c);
   }
-  if (info.finish && (info.finish === "stop" || info.finish === "error" || info.finish === "unknown")) {
-    if (info.sessionID)
-      corrMap.delete(info.sessionID);
+  if (cleanup) {
+    corrMap.delete(usage.sessionID);
   }
 }
 function defaultPath(filename) {

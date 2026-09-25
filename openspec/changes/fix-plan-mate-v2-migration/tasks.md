@@ -41,11 +41,11 @@
 
 ## 8. 集成验证
 
-- [x] 8.1 重启 opencode GUI，确认：插件加载无报错、`plan_mate_stats` 与 `plan_stats` 工具可被 LLM 调用、轮询请求日志与按日统计 JSONL 正常落盘、429/402 熔断日志符合预期
+- [x] 8.1 重启 opencode GUI，确认：插件加载无报错、`plan_mate_stats` 与 `plan_stats` 工具可被 LLM 调用、轮询请求日志正常落盘、429/402 熔断日志符合预期（**注意：此处「按日统计 JSONL 正常落盘」验证不实——`message.updated` 在 v2 事件流中不存在，用量统计实际未记录，已由 `fix-usage-tracking-v2` 修正，见该 change 的 proposal）**
 - [x] 8.2 全量校验：`bun test`、`bun x tsc --noEmit`、`bun run build` 通过；`openspec validate fix-plan-mate-v2-migration` 通过；git 提交迁移完成
 
 ## 9. 目录包入口修复（方案 A，运行时发现）
 
 - [x] 9.1 在仓库根新增 `server.js`（内容 `export { default } from "./dist/index.js"`）作为 v2 目录包的 server 入口，验证 `bun x tsc --noEmit` 与 `bun test` 不受影响
 - [x] 9.2 重启 opencode GUI 后台服务后，确认日志出现 `loading plugin id=opencode-plan-mate` 加载记录且无报错（验证 D9 入口解析生效）
-- [x] 9.3 验证 `plan_mate_stats` / `plan_stats` 工具可被 LLM 调用、轮询日志与按日统计 JSONL 正常落盘、429/402 熔断日志符合预期（补全 8.1 的 GUI 运行时验证；同时确认 `message.updated` 事件以 v1 兼容形态送达，回答 spike 第 4 点）
+- [x] 9.3 验证 `plan_mate_stats` / `plan_stats` 工具可被 LLM 调用、轮询日志正常落盘、429/402 熔断日志符合预期（**修正：此处声称「确认 `message.updated` 事件以 v1 兼容形态送达」不实——v2 事件流不存在 `message.updated`，实际是 `session.step.ended` / `session.step.failed` 等事件，用量统计当时未记录；事件契约修复见 `fix-usage-tracking-v2` change）**

@@ -82,14 +82,14 @@ test("statsDir 已存在时构造不抛错", () => {
   expect(() => new StatsCollector(statsDir, { registerExitHooks: false })).not.toThrow()
 })
 
-test("多步对话:同 id 两步不同 token 均累加,req=2", () => {
+test("多步对话:两次独立 step 均累加,req=2", () => {
   const c = makeCollector()
   c.recordUsage(
-    { id: "msg-1", finish: "tool-calls", tokens: tok(1000, 50) },
+    { id: "evt-1", finish: "tool-calls", tokens: tok(1000, 50) },
     "account-a",
   )
   c.recordUsage(
-    { id: "msg-1", finish: "stop", tokens: tok(3000, 500) },
+    { id: "evt-2", finish: "stop", tokens: tok(3000, 500) },
     "account-b",
   )
   const day = c.getStore()[todayLocal()]
@@ -99,20 +99,57 @@ test("多步对话:同 id 两步不同 token 均累加,req=2", () => {
   expect(day["account-b"].in).toBe(3000)
 })
 
-test("相同 token 快照 re-emission 跳过", () => {
+test("同一 durable 身份重复到达只计一次", () => {
   const c = makeCollector()
   c.recordUsage(
-    { id: "msg-1", finish: "stop", tokens: tok(100, 500) },
+    { id: "evt-1", finish: "stop", tokens: tok(100, 500) },
     "account-a",
+    "sess_abc:42",
   )
   const ret = c.recordUsage(
-    { id: "msg-1", finish: "stop", tokens: tok(100, 500) },
+    { id: "evt-1", finish: "stop", tokens: tok(100, 500) },
     "account-a",
+    "sess_abc:42",
   )
   expect(ret).toBe(false)
   const day = c.getStore()[todayLocal()]
   expect(day["account-a"].req).toBe(1)
   expect(day["account-a"].out).toBe(500)
+})
+
+test("不同 durable 身份各计一次", () => {
+  const c = makeCollector()
+  c.recordUsage({ id: "evt-1", finish: "stop", tokens: tok(100, 50) }, "account-a", "sess_abc:1")
+  c.recordUsage({ id: "evt-2", finish: "stop", tokens: tok(200, 80) }, "account-a", "sess_abc:2")
+  const day = c.getStore()[todayLocal()]
+  expect(day["account-a"].req).toBe(2)
+  expect(day["account-a"].in).toBe(300)
+})
+
+test("空去重身份不去重(每次均累计)", () => {
+  const c = makeCollector()
+  c.recordUsage({ id: "evt-1", finish: "stop", tokens: tok(100, 50) }, "account-a", "")
+  const ret = c.recordUsage({ id: "evt-1", finish: "stop", tokens: tok(100, 50) }, "account-a", "")
+  expect(ret).toBe(true)
+  const day = c.getStore()[todayLocal()]
+  expect(day["account-a"].req).toBe(2)
+  expect(day["account-a"].in).toBe(200)
+})
+
+test("去重集合超限后正常累计新身份", () => {
+  const c = new StatsCollector(statsDir, { registerExitHooks: false, maxSeenEvents: 5 })
+  // 先填满去重集合(5 个去重身份)
+  for (let i = 0; i < 5; i++) {
+    c.recordUsage({ id: `evt-${i}`, finish: "stop", tokens: tok(10, 1) }, "account-a", `sess:${i}`)
+  }
+  // 超限后新身份仍正常累计
+  const ret = c.recordUsage({ id: "evt-5", finish: "stop", tokens: tok(20, 2) }, "account-a", "sess:5")
+  expect(ret).toBe(true)
+  const day = c.getStore()[todayLocal()]
+  expect(day["account-a"].req).toBe(6)
+  // 最旧身份被裁剪后,同一身份可再次累计(证明去重集合有界)
+  const again = c.recordUsage({ id: "evt-0", finish: "stop", tokens: tok(5, 1) }, "account-a", "sess:0")
+  expect(again).toBe(true)
 })
 
 test("per-provider 归因:不同 provider 分别累加", () => {
@@ -190,14 +227,16 @@ test("损坏行跳过,不影响聚合", () => {
   expect(store[todayLocal()]["account-a"].in).toBe(10)
 })
 
-test("缺 id 忽略", () => {
+test("缺 id 正常累计(id 不再参与去重)", () => {
   const c = makeCollector()
   const ret = c.recordUsage(
-    { role: "assistant", finish: "stop", tokens: tok(100, 50) } as unknown as UsageInput,
+    { role: "assistant", finish: "stop", tokens: tok(100, 50) } as UsageInput,
     "account-a",
   )
-  expect(ret).toBe(false)
-  expect(c.getStore()[todayLocal()]).toBeUndefined()
+  expect(ret).toBe(true)
+  const day = c.getStore()[todayLocal()]
+  expect(day["account-a"].req).toBe(1)
+  expect(day["account-a"].in).toBe(100)
 })
 
 test("不同 id 各计一次", () => {

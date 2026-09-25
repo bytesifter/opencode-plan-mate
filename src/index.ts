@@ -4,10 +4,11 @@ import { join } from "node:path"
 import { parseOptions, collectProviders, loadProviderConfig, configFileCandidates } from "./config"
 import { ProviderPool } from "./pool"
 import { handleHttpRequest, handleHttpResponse, type HttpHookCallbacks } from "./http-hooks"
-import { StatsCollector, aggregateStats, type UsageInput } from "./stats"
+import { StatsCollector, aggregateStats } from "./stats"
+import { resolveStepUsage, attributeStep, isReplayedEvent } from "./event-adapter"
 import { renderChart } from "./chart"
 import { collectPlanQuotas, defaultSpawn, renderPlanChart } from "./quota"
-import { Logger, tail, type UsageTokens } from "./logger"
+import { Logger, tail } from "./logger"
 import type { EventContext } from "./types"
 
 /** 图表默认展示天数 */
@@ -19,6 +20,9 @@ let globalStatsDir: string | null = null
 let globalLogger: Logger | null = null
 let globalPool: ProviderPool | null = null
 let hooksRegistered = false
+
+/** 插件启动时刻:回放过滤依据(忽略 created 早于该时刻的历史 durable 事件) */
+let pluginStartTime = 0
 
 /** sessionID → provider 关联(http.request 钩子建立,事件层 token 归因使用) */
 const corrMap = new Map<string, string>()
@@ -34,6 +38,7 @@ const corrMap = new Map<string, string>()
 export default Plugin.define({
   id: "opencode-plan-mate",
   async setup(ctx) {
+    pluginStartTime = Date.now()
     const opts = parseOptions(ctx.options as Record<string, unknown> | undefined)
 
     if (!globalStats) {
@@ -111,11 +116,19 @@ export default Plugin.define({
       })
     })
 
-    // 事件订阅:message.updated 的 token 归因与日志(替代 V1 event hook)
+    // 事件订阅:session.step.ended / session.step.failed 的 token 归因与日志(替代 V1 event hook)
     const controller = new AbortController()
     void (async () => {
+      const resolveProvider = async (sessionID: string): Promise<string | undefined> => {
+        try {
+          const session = await ctx.session.get({ sessionID })
+          return session?.model?.providerID
+        } catch {
+          return undefined
+        }
+      }
       for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
-        handleEvent(event, globalStats!, globalLogger!)
+        await handleEvent(event, globalStats!, globalLogger!, resolveProvider)
       }
     })()
 
@@ -127,43 +140,35 @@ export default Plugin.define({
 })
 
 /**
- * 处理单个事件:message.updated 且含 info.tokens 时累计统计并记日志。
- * token 归因到实际服务的 provider(经 corrMap),无关联时 fallback 到 info.providerID。
+ * 处理单个事件:session.step.ended / session.step.failed 时累计统计并记日志。
+ * token 归因到实际服务的 provider(经 corrMap),无关联时 fallback 到会话当前 provider,再降级 unknown。
+ * 终态 finish 或 step.failed 后清理 corrMap 关联。
  */
-function handleEvent(event: unknown, stats: StatsCollector, logger: Logger): void {
-  const e = event as {
-    type?: string
-    properties?: {
-      info?: UsageInput & {
-        sessionID?: string
-        modelID?: string
-        providerID?: string
-        mode?: string
-        agent?: string
-        time?: { created?: number; completed?: number }
-      }
-    }
-  }
-  if (e.type !== "message.updated" || !e.properties?.info) return
-  const info = e.properties.info
-  const provider = (info.sessionID && corrMap.get(info.sessionID)) || info.providerID || "unknown"
-  const committed = stats.recordUsage(info, provider)
+async function handleEvent(
+  event: unknown,
+  stats: StatsCollector,
+  logger: Logger,
+  resolveProvider: (sessionID: string) => Promise<string | undefined>,
+): Promise<void> {
+  const usage = resolveStepUsage(event)
+  if (!usage) return
+  // 回放过滤:忽略 created 早于插件启动时刻的历史 durable 事件回放(created 缺失视为实时)
+  if (isReplayedEvent(usage.created, pluginStartTime)) return
+  const { provider, cleanup } = await attributeStep(usage, corrMap, resolveProvider)
+  const committed = stats.recordUsage(
+    { id: usage.eventID, finish: usage.finish, tokens: usage.tokens, cost: usage.cost },
+    provider,
+    usage.durableKey,
+  )
   if (committed) {
     const c: EventContext = {
-      sessionID: info.sessionID ? info.sessionID.slice(0, 8) : undefined,
-      modelID: info.modelID,
+      sessionID: usage.sessionID.slice(0, 8),
       providerID: provider,
-      mode: info.mode,
-      agent: info.agent,
-      durationMs:
-        typeof info.time?.created === "number" && typeof info.time?.completed === "number"
-          ? info.time.completed - info.time.created
-          : 0,
     }
-    logger.logUsage(info.tokens as UsageTokens, typeof info.cost === "number" ? info.cost : 0, c)
+    logger.logUsage(usage.tokens, typeof usage.cost === "number" ? usage.cost : 0, c)
   }
-  if (info.finish && (info.finish === "stop" || info.finish === "error" || info.finish === "unknown")) {
-    if (info.sessionID) corrMap.delete(info.sessionID)
+  if (cleanup) {
+    corrMap.delete(usage.sessionID)
   }
 }
 

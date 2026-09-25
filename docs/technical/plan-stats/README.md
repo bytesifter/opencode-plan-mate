@@ -56,7 +56,7 @@ parseUsagePlan(stdout)   ← items[] → PlanQuota{provider, kind, subscribed, p
 renderPlanChart(PlanQuota[])   ← ASCII 表 + percent 柱 + 重置时间
 ```
 
-> **v2 迁移说明**（`fix-plan-mate-v2-migration`）：`plan_stats` 工具在 v2 下经 `ctx.tool.transform` 注册（入参为 JSON Schema），options 经 `ctx.options` 传入；取数编排、隔离 HOME、percent-only 渲染逻辑不变。
+> **v2 迁移说明**（`fix-plan-mate-v2-migration`）：`plan_stats` 工具在 v2 下经 `ctx.tool.transform` 注册（入参为 JSON Schema），options 经 `ctx.options` 传入；取数编排、隔离 HOME、percent-only 渲染逻辑不变。用量统计（`plan_mate_stats`）的事件源随 `fix-usage-tracking-v2` 迁移为 v2 `session.step.ended` / `session.step.failed` 事件（见 [用户指南](../../user-guide/plan-mate-stats.md)）。
 
 扩展性：取数机制封装在 `QuotaAdapter` 内（`src/quota.ts` 注册表），编排/渲染不感知具体 provider。新增 provider = 新增 adapter 并注册进数组，不改编排/渲染。
 
@@ -73,4 +73,4 @@ renderPlanChart(PlanQuota[])   ← ASCII 表 + percent 柱 + 重置时间
 
 - 用户指南：[套餐配额统计](../../user-guide/plan-stats.md)
 - 安装配置：[安装与配置](../../getting-started/installation.md)
-- 实现细节：[add-plan-stats](../../../openspec/changes/add-plan-stats/)、[fix-plan-stats-multi-account](../../../openspec/changes/fix-plan-stats-multi-account/)、[fix-plan-mate-v2-migration](../../../openspec/changes/fix-plan-mate-v2-migration/)（opencode v2 迁移）
+- 实现细节：[add-plan-stats](../../../openspec/changes/add-plan-stats/)、[fix-plan-stats-multi-account](../../../openspec/changes/fix-plan-stats-multi-account/)、[fix-plan-mate-v2-migration](../../../openspec/changes/fix-plan-mate-v2-migration/)（opencode v2 迁移）、[fix-usage-tracking-v2](../../../openspec/changes/fix-usage-tracking-v2/)（用量统计 v2 事件契约修复）

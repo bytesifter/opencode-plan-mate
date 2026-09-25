@@ -4,10 +4,11 @@ import { join } from "node:path"
 import { ensureDir } from "./fs-util"
 
 /**
- * Usage 输入:从 AssistantMessage 提取的字段(与 @opencode-ai/sdk 解耦,便于测试)。
+ * Usage 输入:单步用量字段(与事件解析层解耦,便于测试)。
+ * v2 契约下 `id` 为事件 id,仅作信息记录,不参与去重(去重按 recordUsage 的 eventID 参数)。
  */
 export interface UsageInput {
-  id: string
+  id?: string
   role?: string
   finish?: string
   tokens?: {
@@ -19,8 +20,8 @@ export interface UsageInput {
   cost?: number
 }
 
-/** token 快照,用于检测新 step vs re-emission */
-interface TokenSnapshot {
+/** 扁平 token 快照(用于全零判定) */
+interface FlatTokens {
   input: number
   output: number
   reasoning: number
@@ -28,18 +29,22 @@ interface TokenSnapshot {
   cacheWrite: number
 }
 
-/** 终态 finish 值:表示消息处理结束,可清理关联映射 */
-const TERMINAL_FINISH = new Set(["stop", "error", "unknown"])
-
 /** 默认定时刷盘间隔(毫秒) */
 const DEFAULT_FLUSH_MS = 60000
+
+/** 事件 id 去重集合的容量上限:超过后先裁剪过期条目 */
+const DEFAULT_MAX_SEEN_EVENTS = 5000
+
+/** 事件 id 去重条目的过期时长(毫秒):超过则视为可裁剪 */
+const SEEN_EVENT_MAX_AGE_MS = 10 * 60 * 1000
 
 /**
  * 用量统计收集器:内存累积 + 定时追加刷盘到按日 JSONL。
  *
  * 设计要点:
- * - 通过 event hook 的 message.updated 拿 usage,不解析 SSE 流
- * - token 快照变化检测:不同 token = 新 step,累加;相同 = re-emission,跳过
+ * - 通过 ctx.event.subscribe 的 session.step.ended / session.step.failed 事件拿单步用量(v2 契约)
+ * - 每个 step 事件计一次 req,无需 token 快照 diff(v1 为累积快照流设计,已退役)
+ * - 有界事件 id 去重:同一事件重复到达(事件流重放、多订阅重复处理)不重复累计
  * - 内存累积,60s 定时把自上次刷盘以来的增量(追加式)写入当天 JSONL,崩溃最多丢 1 分钟统计
  * - 追加式写入(O_APPEND + 单次 write)天然原子,多进程并发不互相覆盖
  */
@@ -48,15 +53,18 @@ export class StatsCollector {
   private pending: StatsStore = {}
   private readonly dir: string
   private readonly flushMs: number
+  private readonly maxSeenEvents: number
   private timer?: ReturnType<typeof setInterval>
-  private lastTokens: Map<string, TokenSnapshot> = new Map()
+  /** eventID -> 首次到达时间(有界去重集合,Map 保持插入序) */
+  private seenEvents: Map<string, number> = new Map()
 
   constructor(
     dir: string,
-    opts: { flushMs?: number; registerExitHooks?: boolean } = {},
+    opts: { flushMs?: number; registerExitHooks?: boolean; maxSeenEvents?: number } = {},
   ) {
     this.dir = dir
     this.flushMs = opts.flushMs ?? DEFAULT_FLUSH_MS
+    this.maxSeenEvents = opts.maxSeenEvents ?? DEFAULT_MAX_SEEN_EVENTS
     ensureDir(this.dir)
     if (opts.registerExitHooks !== false) {
       this.timer = setInterval(() => this.flush(), this.flushMs)
@@ -65,32 +73,46 @@ export class StatsCollector {
   }
 
   /**
-   * 累计一条 usage。按 id + token 快照去重:
-   * - 同一 id 的 token 快照变化(新 step)-> 累加到指定 provider
-   * - 同一 id 的 token 快照相同(re-emission)-> 跳过
-   * 缺 id 或 tokens 时忽略。
+   * 累计一条 step 用量。
+   * - 缺 tokens 或 tokens 全零时忽略
+   * - 传入非空 dedupeKey 时去重:同一去重身份重复到达返回 false
    *
-   * @param info - message.updated 的 usage 信息
+   * @param info - 单步用量信息
    * @param provider - 实际服务的 provider 名(corrMap 或 fallback)
+   * @param dedupeKey - 去重身份(durableKey: `aggregateID:seq`,缺 durable 时为 event.id;空串不去重)
    * @returns 是否累加了(用于日志)
    */
-  recordUsage(info: UsageInput, provider: string): boolean {
-    if (!info.id || !info.tokens) return false
-    const snapshot: TokenSnapshot = {
-      input: num(info.tokens.input),
-      output: num(info.tokens.output),
-      reasoning: num(info.tokens.reasoning),
-      cacheRead: num(info.tokens.cache.read),
-      cacheWrite: num(info.tokens.cache.write),
-    }
+  recordUsage(info: UsageInput, provider: string, dedupeKey?: string): boolean {
+    if (!info.tokens) return false
+    const snapshot = toSnapshot(info.tokens)
     if (isAllZero(snapshot)) return false
-    const prev = this.lastTokens.get(info.id)
-    if (prev && sameSnapshot(prev, snapshot)) {
-      return false
+    if (dedupeKey) {
+      if (this.seenEvents.has(dedupeKey)) return false
+      this.remember(dedupeKey)
     }
     this.commitToStore(info, provider)
-    this.lastTokens.set(info.id, snapshot)
     return true
+  }
+
+  /** 记录事件 id 到去重集合,超过容量时先裁剪过期条目 */
+  private remember(eventID: string): void {
+    const now = Date.now()
+    if (this.seenEvents.size >= this.maxSeenEvents) {
+      this.pruneSeen(now)
+    }
+    this.seenEvents.set(eventID, now)
+  }
+
+  /** 裁剪过期条目;仍超容时按插入序(最旧)删除至容量内 */
+  private pruneSeen(now: number): void {
+    for (const [id, ts] of this.seenEvents) {
+      if (now - ts > SEEN_EVENT_MAX_AGE_MS) this.seenEvents.delete(id)
+    }
+    while (this.seenEvents.size >= this.maxSeenEvents) {
+      const oldest = this.seenEvents.keys().next().value as string | undefined
+      if (oldest === undefined) break
+      this.seenEvents.delete(oldest)
+    }
   }
 
   private commitToStore(info: UsageInput, provider: string): void {
@@ -143,20 +165,20 @@ function newProviderStats(): ProviderStats {
   return { req: 0, in: 0, out: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, cost: 0 }
 }
 
-/** 比较 two token snapshots 是否相同 */
-function sameSnapshot(a: TokenSnapshot, b: TokenSnapshot): boolean {
-  return (
-    a.input === b.input &&
-    a.output === b.output &&
-    a.reasoning === b.reasoning &&
-    a.cacheRead === b.cacheRead &&
-    a.cacheWrite === b.cacheWrite
-  )
+/** 检查 token 快照是否全零(非真实用量报告的 step 事件) */
+function isAllZero(s: FlatTokens): boolean {
+  return s.input === 0 && s.output === 0 && s.reasoning === 0 && s.cacheRead === 0 && s.cacheWrite === 0
 }
 
-/** 检查 token 快照是否全零(opencode 创建 assistant 消息时的初始事件) */
-function isAllZero(s: TokenSnapshot): boolean {
-  return s.input === 0 && s.output === 0 && s.reasoning === 0 && s.cacheRead === 0 && s.cacheWrite === 0
+/** 将 tokens 结构转换为扁平快照(容错:非数字归零) */
+function toSnapshot(tokens: { input: number; output: number; reasoning: number; cache: { read: number; write: number } }): FlatTokens {
+  return {
+    input: num(tokens.input),
+    output: num(tokens.output),
+    reasoning: num(tokens.reasoning),
+    cacheRead: num(tokens.cache.read),
+    cacheWrite: num(tokens.cache.write),
+  }
 }
 
 /** 容错数值转换:非数字归零 */
