@@ -2,7 +2,8 @@ import type { ParsedOptions, ProviderEntry } from "./types"
 import { existsSync, readFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
-import { parse } from "jsonc-parser"
+// 显式走 ESM 构建:UMD 版(main)的 require('./impl/*') 是动态调用,bun build 无法静态内联,运行时会 MODULE_NOT_FOUND
+import { parse } from "jsonc-parser/lib/esm/main.js"
 
 /** 默认冷却时长(毫秒),请求太快 429 后该 provider 暂时停用 */
 const DEFAULT_COOLDOWN_MS = 60000

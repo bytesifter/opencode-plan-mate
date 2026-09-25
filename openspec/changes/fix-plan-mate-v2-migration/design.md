@@ -66,11 +66,18 @@ V1 通过 `config` hook 读 `Config.provider[name].options.{baseURL, apiKey, mod
 - `devDependencies`：`@opencode-ai/plugin` → `@opencode/plugin`（v2 插件包，运行时由 opencode 提供）。
 - `src/index.ts` 导入 `import { Plugin } from "@opencode/plugin"`，默认导出 `Plugin.define({id: "opencode-plan-mate", async setup(ctx) {...}})`。
 - 构建脚本不变（`bun build ... --target node`），`dist/index.js` 重构建。
+- **jsonc-parser 打包坑**：`jsonc-parser` 的 `main` 指向 UMD 构建，其 `require('./impl/*')` 是动态调用，bun build 无法静态内联（运行时 `Cannot find module './impl/format'`）。必须显式导入 ESM 构建 `jsonc-parser/lib/esm/main.js`，bun 才能静态追踪并内联全部 impl 模块。
 
 ### D8: 文档与文章
 
 - README + `docs/` 四处文档的配置写法、机制描述（config hook / fetch-patch / event hook）更新为 v2 形态，新增「opencode v2 兼容性要求」。
 - `articles/opencode-plugin-dev-guide.md`：开头加 V1 版本标注横幅，末尾新增「v2 迁移要点」章节，正文保留。
+
+### D9: 目录包入口解析（运行时发现，v2 不用 package.json main）
+
+**运行时发现**（服务重启后日志仍无 plan-mate 加载记录，深挖 v2.0.16 源码定位）：v2 对配置 `plugins` 中的**目录包**做**路径式入口解析**（`Host.resolve({directory})`），在包根按 `server` → `index` 顺序查找（`path.resolve(dir, "server"|"index")`），**不读取 `package.json` 的 `main` 字段**（那是 V1 行为）。仓库根无 `server.*`/`index.*` 时 `Host.resolve` 返回 `server: undefined` → 加载器静默跳过（无日志）。
+
+**决策（方案 A）**：仓库根新增 `server.js`，内容为 `export { default } from "./dist/index.js"`，作为 v2 目录包的 server 入口；构建产物路径不变。备选：根 `index.js`（同 re-export，但 `server` 优先级更高）/ 改构建输出到根目录（污染仓库根，否决）。
 
 ## Risks / Trade-offs
 

@@ -4,7 +4,7 @@
 
 ### Requirement: 插件以路径形式声明
 
-全局 `opencode.jsonc` 的 `plugins` 数组中,`opencode-plan-mate` SHALL 以路径形式声明(`{"package": "file:///<路径>", "options": {...}}` 对象或 `file:///<路径>` 字符串)。v2 不再识别 V1 的 `plugin` 数组 + `["file:///路径", options]` 元组形态,该形态条目 SHALL NOT 被加载。插件入口 SHALL 由目录的 `package.json` `main` 字段解析为 `./dist/index.js` 预构建产物。
+全局 `opencode.jsonc` 的 `plugins` 数组中,`opencode-plan-mate` SHALL 以路径形式声明(`{"package": "file:///<路径>", "options": {...}}` 对象或 `file:///<路径>` 字符串)。v2 不再识别 V1 的 `plugin` 数组 + `["file:///路径", options]` 元组形态,该形态条目 SHALL NOT 被加载。v2 对目录包在包根按 `server` / `index` 顺序解析入口(`Host.resolve`),SHALL NOT 依赖 `package.json` 的 `main` 字段;仓库根 `server.js` SHALL re-export 预构建产物 `./dist/index.js` 作为该入口。
 
 #### Scenario: 路径声明被识别为 path plugin
 
@@ -13,8 +13,9 @@
 
 #### Scenario: 插件入口解析为 JavaScript 文件
 
-- **WHEN** opencode v2 读取插件目录的 `package.json`
-- **THEN** `main` 字段 SHALL 指向 `.js` 文件(`./dist/index.js`),而非 `.ts` 文件
+- **WHEN** opencode v2 加载目录包 `file:///D:/code/opencode-plan-mate`,包根存在 `server.js`
+- **THEN** 入口 SHALL 解析为该 `server.js`,其 `export { default } from "./dist/index.js"` SHALL 透出 v2 插件默认导出(`{id, setup}`)
+- **AND** SHALL NOT 依赖 `package.json` 的 `main` 字段(目录包不做包名式解析)
 
 #### Scenario: V1 元组形态不被加载
 
