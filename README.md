@@ -11,9 +11,11 @@ opencode 插件：对多个账号 API key 做**随机轮询**，附带按天实�
 - **实际用量统计**：按天累计请求数与 token（`plan_mate_stats` 工具，ASCII 柱状图）
 - **官方配额查看**：各账号 Coding Plan 配额 percent + 重置时间（`plan_stats` 工具）
 - **结构化日志**：按日轮转，key 脱敏，含业务上下文与耗时
-- **自包含构建**：`dist/index.js` 内联 `@opencode-ai/plugin` 的 `tool()` 与 `zod`，零依赖分发
+- **自包含构建**：`dist/index.js` 内联全部依赖（含 `jsonc-parser`），运行时零依赖分发，仅需 opencode v2 提供插件运行时
 
 ## 快速开始
+
+> **版本要求**：本插件需 **opencode v2**（含桌面版 GUI，内置 v2.0.x 后台服务）。v1.x 的插件模型已废弃，v1 下插件不会被加载；V1 插件 API 说明见 `articles/opencode-plugin-dev-guide.md`（历史参考）。
 
 1. 克隆并构建
 
@@ -24,11 +26,14 @@ bun install
 bun run build
 ```
 
-2. 在 `~/.config/opencode/opencode.jsonc`（Windows 为 `%USERPROFILE%\.config\opencode\opencode.jsonc`）的 `plugin` 数组指向插件，声明参与轮询的账号
+2. 在 `~/.config/opencode/opencode.jsonc`（Windows 为 `%USERPROFILE%\.config\opencode\opencode.jsonc`）的 `plugins` 数组指向插件，声明参与轮询的账号
 
 ```jsonc
-"plugin": [
-  ["file:///path/to/opencode-plan-mate", { "providers": ["account-a", "account-b", "account-c"] }]
+"plugins": [
+  {
+    "package": "file:///path/to/opencode-plan-mate",
+    "options": { "providers": ["account-a", "account-b", "account-c"] }
+  }
 ]
 ```
 
@@ -38,7 +43,7 @@ bun run build
 
 ### 一键登录各账号（plan_stats 前置）
 
-`plan_stats` 需要每个账号在独立 HOME 下完成 SSO 登录。仓库自带脚本自动读取 `planStats.accounts` 并全量重登：
+`plan_stats` 需要每个账号在独立 HOME 下完成 SSO 登录。仓库自带脚本自动读取 `planStats.accounts`（兼容 v2 `plugins` 对象形态与 v1 `plugin` 元组形态）并全量重登：
 
 POSIX（Linux / macOS）：
 

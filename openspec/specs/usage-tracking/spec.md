@@ -1,3 +1,11 @@
+# usage-tracking Specification
+
+## Purpose
+
+按天用量统计能力：订阅消息事件累计各 provider 的请求数与 token 消耗，按日追加式 JSONL 落盘，并提供 ASCII 柱状图查询工具。
+
+## Requirements
+
 ### Requirement: 按天累计请求数与 token
 
 插件 SHALL 通过 `event` hook 监听 `message.updated` 事件，按天、按 provider 累计请求数与 token 消耗。统计 SHALL 在内存对象上累积，定时器每 60 秒将增量追加刷盘一次；进程退出时 SHALL 兜底刷盘。

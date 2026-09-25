@@ -35,6 +35,11 @@ export class ProviderPool {
     }
   }
 
+  /** 池内 provider 条目数(用于判断是否注册拦截器) */
+  get entryCount(): number {
+    return this.entries.length
+  }
+
   /**
    * 随机选一个非熔断 provider。
    *
@@ -85,6 +90,13 @@ export class ProviderPool {
    */
   keyIndex(key: string): number {
     return this.entries.findIndex((e) => e.key === key)
+  }
+
+  /**
+   * 按 key 反查 provider 条目(http.response 用 Authorization 头识别 key 后取条目)。未找到返回 undefined。
+   */
+  entryByKey(key: string): ProviderEntry | undefined {
+    return this.entries.find((e) => e.key === key)
   }
 
   /**

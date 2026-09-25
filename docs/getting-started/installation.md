@@ -14,23 +14,27 @@ bun install
 bun run build
 ```
 
-在 `~/.config/opencode/opencode.jsonc`（Windows 为 `%USERPROFILE%\.config\opencode\opencode.jsonc`）的 `plugin` 数组中用 `file:///` 指向 clone 路径：
+> **版本要求**：需要 **opencode v2**（CLI ≥ 2.0，或桌面版 GUI 内置 v2 后台服务）。v1.x 插件模型已废弃，本插件在 v1 下不会被加载。
+
+在 `~/.config/opencode/opencode.jsonc`（Windows 为 `%USERPROFILE%\.config\opencode\opencode.jsonc`）的 `plugins` 数组中用 `{"package": "file:///...", "options": {...}}` 对象指向 clone 路径：
 
 ```jsonc
-"plugin": [
-  ["file:///path/to/opencode-plan-mate", { "providers": ["account-a", "account-b", "account-c"] }]
+"plugins": [
+  { "package": "file:///path/to/opencode-plan-mate", "options": { "providers": ["account-a", "account-b", "account-c"] } }
 ]
 ```
 
 Windows 下路径用盘符写法（`file:///` 后接 `D:/...`，斜杠而非反斜杠）：
 
 ```jsonc
-"plugin": [
-  ["file:///D:/code/opencode-plan-mate", { "providers": ["account-a", "account-b", "account-c"] }]
+"plugins": [
+  { "package": "file:///D:/code/opencode-plan-mate", "options": { "providers": ["account-a", "account-b", "account-c"] } }
 ]
 ```
 
 插件的 `main` 指向 `./dist/index.js`（预构建产物），opencode 通过 `import()` 加载。修改源码后执行 `bun run build` 重新构建。
+
+> v1 的 `plugin` 数组 + `["file:///路径", options]` 元组形态在 v2 下**不会被加载**（静默丢弃），必须使用上面的 v2 `plugins` 对象形态。
 
 ## 配置项
 
@@ -92,22 +96,27 @@ Windows 下路径用盘符写法（`file:///` 后接 `D:/...`，斜杠而非反�
       }
     }
   },
-  "plugin": [
-    ["file:///path/to/opencode-plan-mate", {
-      "providers": ["account-a", "account-b", "account-c"],
-      "cooldownMs": 60000,
-      "quotaCooldownMs": 3600000
-    }]
+  "plugins": [
+    {
+      "package": "file:///path/to/opencode-plan-mate",
+      "options": {
+        "providers": ["account-a", "account-b", "account-c"],
+        "cooldownMs": 60000,
+        "quotaCooldownMs": 3600000
+      }
+    }
   ]
 }
 ```
 
-`model` 指向的 provider 决定 opencode 发出的初始请求 URL，插件拦截 fetch 后用 `pool.findBaseURL()` 识别该请求归属的接入点，然后在该接入点下按模型分组随机选 provider，替换为选中 provider 的 key（baseURL 相同，URL 不变）。不跨接入点轮询。
+`model` 指向的 provider 决定 opencode 发出的初始请求 URL，插件在 `ctx.session.hook("http.request")` 钩子中用 `pool.findBaseURL()` 识别该请求归属的接入点，然后在该接入点下按模型分组随机选 provider，替换为选中 provider 的 key（同接入点 baseURL 不变，URL 不变）。不跨接入点轮询。
 
 ## 轮询规则
 
-- 插件通过 `config` hook 读取 `opencode.jsonc` 中 `providers` 列表对应的 provider，收集所有 key + baseURL 形成扁平列表
-- 按「接入点 + 模型」分组：请求从哪个 baseURL 发出，就在该 baseURL 下、支持该模型（解析请求 body 的 `model` 字段）的 provider 中随机选一个，替换 Authorization 头和请求 URL（同接入点下 URL 不变，仅换 key；不跨接入点轮询）
+- 插件 options（`providers` 等）来自 `plugins` 数组 `{package, options}` 对象的 `options`，经 `ctx.options` 传入 `setup(ctx)`
+- 插件读取 `opencode.jsonc`（全局 + 所在位置配置，项目级覆盖全局）中 `providers` 列表对应的 provider 定义（v2 的 provider 元数据不含 apiKey，apiKey 从配置文件读取），收集所有 key + baseURL 形成扁平列表
+- 按「接入点 + 模型」分组：请求从哪个 baseURL 发出，就在该 baseURL 下、支持该模型（解析请求 body 的 `model` 字段）的 provider 中随机选一个，替换 Authorization 头（同接入点下 URL 不变，仅换 key；不跨接入点轮询）
 - 请求 body 不可解析或模型在该接入点无匹配时，退化为在该接入点内所有非熔断 provider 中随机选
 - 同接入点分组全部熔断（429/402）时 passthrough 回退到 opencode 原生请求，不跨接入点兜底
+- 429/402 熔断判定在 `ctx.session.hook("http.response")` 钩子中完成（429 读响应体区分配额耗尽/请求太快；402 无条件长熔断）
 - key 去重（相同 key 只保留第一个）

@@ -98,6 +98,45 @@ test("extractAccounts 无 planStats.accounts 返回空数组", () => {
   expect(extractAccounts("not-json{")).toEqual([])
 })
 
+// ===== extractAccounts:v2 plugins 数组形态 =====
+test("extractAccounts 解析 v2 plugins 对象形态", () => {
+  const text = `{
+    "plugins": [
+      "opencode-acme-plugin",
+      {
+        "package": "file:///D:/code/opencode-plan-mate",
+        "options": {
+          "providers": ["a", "b"],
+          "planStats": { "accounts": { "acct-a": "~/.arkcli-accounts/a", "acct-b": "~/.arkcli-accounts/b" } }
+        }
+      },
+      { "package": "other", "options": { "no": "planStats" } }
+    ]
+  }`
+  const accounts = extractAccounts(text)
+  expect(accounts.map((a) => a.name)).toEqual(["acct-a", "acct-b"])
+  expect(accounts[0].home).toMatch(/[\\/]\.arkcli-accounts[\\/]a$/)
+  expect(accounts[1].home).toMatch(/[\\/]\.arkcli-accounts[\\/]b$/)
+})
+
+test("extractAccounts v2 与 v1 双形态并存时都解析", () => {
+  const text = `{
+    "plugin": [
+      ["file:///path/v1", { "planStats": { "accounts": { "legacy-a": "~/.arkcli-accounts/la" } } }]
+    ],
+    "plugins": [
+      { "package": "file:///path/v2", "options": { "planStats": { "accounts": { "new-a": "~/.arkcli-accounts/na" } } } }
+    ]
+  }`
+  const accounts = extractAccounts(text)
+  expect(accounts.map((a) => a.name).sort()).toEqual(["legacy-a", "new-a"])
+})
+
+test("extractAccounts v2 无 planStats 或空数组返回空", () => {
+  expect(extractAccounts('{"plugins": ["pkg", {"package": "x", "options": {"y": 1}}]}')).toEqual([])
+  expect(extractAccounts('{"plugins": []}')).toEqual([])
+})
+
 // ===== loginPhase1Args / loginPhase2Args:auth login 显式走 legacy 链路 =====
 test("loginPhase1Args 携带 --no-browser 与 --login-mode legacy", () => {
   const args = loginPhase1Args()

@@ -1,5 +1,7 @@
 # opencode 插件开发指南：从 429 限流到多 Key 自动轮询
 
+> **版本标注**：本文基于 **opencode v1.18.x（V1 插件模型）**。opencode v2 已整体重写插件模型（`plugins` 配置、`Plugin.define` 导出、domain API），本文仅作 V1 历史参考；v2 差异见文末「v2 迁移要点」。
+
 ## 背景
 
 日常用 opencode 写代码，单个 API Key 频繁触发 429 限流。手头有 6 个高级版账号（coding + plan 端点），虽然 `opencode.jsonc` 可以配多个 provider，但 `model` 一次只能指向一个，手动切换账号很繁琐，而且无法自动应对 429 限流。
@@ -685,3 +687,79 @@ bun install
 完整代码和文档：[https://github.com/bytesifter/opencode-round-robin](https://github.com/bytesifter/opencode-round-robin)
 
 如果对你有帮助，欢迎 Star 支持。
+
+## 十二、v2 迁移要点
+
+opencode v2（≥ 2.0，含桌面版 GUI）重写了插件模型。**V1 插件实现不会在 v2 运行**——移动文件或改配置条目不够，必须迁移插件代码。本文前述内容均为 V1 模型，以下列出关键差异：
+
+### 12.1 配置形态：`plugin` → `plugins`
+
+```jsonc
+// V1(不再加载)
+"plugin": [
+  ["file:///path/to/plugin", { "providers": ["a"] }]
+]
+
+// V2
+"plugins": [
+  {
+    "package": "file:///path/to/plugin",
+    "options": { "providers": ["a"] }
+  }
+]
+```
+
+`plugins` 数组接受：npm 包名 / 路径字符串（`file:///...`、`/abs/path`、`./rel`）/ `{package, options}` 对象。V1 的 `["file:///路径", options]` 元组在 v2 下会被静默丢弃。
+
+### 12.2 导出格式：`PluginModule {id, server}` → `Plugin.define({id, setup})`
+
+```ts
+// V1
+import { tool, type Plugin, type PluginModule } from "@opencode-ai/plugin"
+const server: Plugin = async (input, options) => ({ /* hooks */ })
+export default { id: "my-plugin", server } satisfies PluginModule
+
+// V2
+import { Plugin } from "@opencode/plugin"
+export default Plugin.define({
+  id: "my-plugin",
+  async setup(ctx) {
+    // ctx.options 取配置;返回 cleanup 在卸载时执行
+  },
+})
+```
+
+运行时依赖从 `@opencode-ai/plugin`（V1）换成 `@opencode/plugin`（V2），均放 `devDependencies`。
+
+### 12.3 API 模型：hooks 对象 → domain API
+
+| 能力 | V1 | V2 |
+|------|----|----|
+| 读配置 options | `server(input, options)` 第二参 | `ctx.options` |
+| 注册工具 | `tool: { name: tool({...}) }`（zod） | `ctx.tool.transform`（JSON Schema 入参） |
+| 监听事件 | `event: async ({event}) => {}` | `ctx.event.subscribe()` 异步迭代 |
+| 改 provider/模型 | `config` / `provider` hook | `ctx.provider.transform` / `ctx.model.transform` |
+| 会话操作 | `input.client.session.*` | `ctx.session.*` |
+| 持久化 | 自管文件 | `ctx.storage` |
+
+### 12.4 请求拦截：fetch monkey-patch → `ctx.session.hook`
+
+V1 靠 `globalThis.fetch = ...` 全局替换拦截 LLM 请求。v2 提供一等钩子：
+
+```ts
+await ctx.session.hook("http.request", (event) => {
+  event.request.headers.set("Authorization", "Bearer xxx")
+  // event.sessionID / event.model / event.kind 可直接用
+})
+await ctx.session.hook("http.response", (event) => {
+  if (event.response.status === 429) { /* 熔断 */ }
+})
+```
+
+钩子事件自带 `sessionID`（V1 靠 `X-Session-Id` 头的做法不再需要）；请求 body 为一次性流，读取前先 `clone()`。
+
+### 12.5 其他
+
+- 本地插件加载：`.opencode/plugins/`（项目）或 `~/.config/opencode/plugins/`（全局）自动加载
+- 文章 §10.1 的 `@local` 安装问题、§10.2 的 asar 挖掘路径均属 V1/旧桌面版（`@opencode-aidesktop`），v2 桌面版为 `@opencodedesktop`
+- 完整迁移指南见 [官方 v2 迁移文档](https://opencode.ai/v2/docs/build/plugins/migrate-v1)；本项目实战迁移见 [fix-plan-mate-v2-migration](../../openspec/changes/fix-plan-mate-v2-migration/) 与 [docs/technical](../../docs/technical/plan-stats/README.md)

@@ -1,7 +1,9 @@
 import { test, expect } from "bun:test"
-import { parseOptions, collectProviders } from "../src/config"
+import { parseOptions, collectProviders, loadProviderConfig, configFileCandidates } from "../src/config"
 import { homedir } from "node:os"
 import { join } from "node:path"
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
 
 const fakeConfig = {
   provider: {
@@ -111,4 +113,65 @@ test("collectProviders: 缺 baseURL 抛错", () => {
 test("collectProviders: 缺 apiKey 抛错", () => {
   const cfg = { provider: { a: { options: { baseURL: "https://x" } } } }
   expect(() => collectProviders(cfg, ["a"])).toThrow(/apiKey/)
+})
+
+// ===== v2 配置形态:loadProviderConfig(从 opencode.jsonc 读 provider 段)=====
+function tmpConfig(jsonc: string): string {
+  const dir = mkdtempSync(join(tmpdir(), "plan-mate-test-"))
+  const file = join(dir, "opencode.jsonc")
+  writeFileSync(file, jsonc)
+  return file
+}
+
+test("loadProviderConfig: 解析 jsonc 的 provider 段", () => {
+  const file = tmpConfig(`{
+    // 注释
+    "provider": {
+      "volxc9208": { "options": { "apiKey": "k1", "baseURL": "https://x/coding/v3" }, "models": { "glm-5.2": {} } },
+      "volxc5425": { "options": { "apiKey": "k3", "baseURL": "https://x/coding/v3" } },
+    },
+  }`)
+  try {
+    const cfg = loadProviderConfig([file])
+    expect(cfg.provider?.volxc9208?.options?.apiKey).toBe("k1")
+    expect(cfg.provider?.volxc5425?.options?.baseURL).toBe("https://x/coding/v3")
+    expect(Object.keys(cfg.provider ?? {})).toHaveLength(2)
+  } finally {
+    rmSync(join(file, ".."), { recursive: true, force: true })
+  }
+})
+
+test("loadProviderConfig: 后读配置覆盖先读的同名 provider", () => {
+  const f1 = tmpConfig(`{ "provider": { "a": { "options": { "apiKey": "old", "baseURL": "https://x" } } } }`)
+  const f2 = tmpConfig(`{ "provider": { "a": { "options": { "apiKey": "new", "baseURL": "https://x" } } } }`)
+  try {
+    const cfg = loadProviderConfig([f1, f2])
+    expect(cfg.provider?.a?.options?.apiKey).toBe("new")
+  } finally {
+    rmSync(join(f1, ".."), { recursive: true, force: true })
+    rmSync(join(f2, ".."), { recursive: true, force: true })
+  }
+})
+
+test("loadProviderConfig: 文件不存在/不可解析返回空 provider", () => {
+  expect(loadProviderConfig([join(tmpdir(), "nonexistent-opencode.jsonc")]).provider).toEqual({})
+  const bad = tmpConfig(`{ not-json `)
+  try {
+    expect(loadProviderConfig([bad]).provider).toEqual({})
+  } finally {
+    rmSync(join(bad, ".."), { recursive: true, force: true })
+  }
+})
+
+test("configFileCandidates: 全局在前,位置在后(项目覆盖全局)", () => {
+  const globalDir = "C:/Users/me/.config/opencode"
+  const locationDir = "D:/code/proj"
+  const candidates = configFileCandidates(globalDir, locationDir)
+  expect(candidates).toEqual([
+    join(globalDir, "opencode.json"),
+    join(globalDir, "opencode.jsonc"),
+    join(locationDir, "opencode.json"),
+    join(locationDir, "opencode.jsonc"),
+  ])
+  expect(configFileCandidates(globalDir)).toHaveLength(2)
 })

@@ -1,28 +1,24 @@
-# key-rotation Specification
+# Spec Delta
 
-## Purpose
-
-多账号 API key 随机轮询能力：按接入点与模型分组随机选择 provider 替换请求凭证，对 429/402 实施熔断冷却，并在分组全部熔断时回退到原始请求。
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: providers 配置必填
 
-`options.providers` SHALL 为非空字符串数组。未配或为空时插件 SHALL 抛出错误且不安装 fetch-patch。
+`ctx.options.providers` SHALL 为非空字符串数组。未配或为空时插件 SHALL 抛出配置错误,且不注册 `http.request`/`http.response` 拦截器。
 
 #### Scenario: 缺少 providers
 
-- **WHEN** `options` 未提供 `providers` 或为空数组
-- **THEN** 插件 SHALL 抛出配置错误,不安装 fetch-patch
+- **WHEN** `ctx.options` 未提供 `providers` 或为空数组
+- **THEN** 插件 SHALL 抛出配置错误,不注册拦截器
 
 #### Scenario: provider 名不存在
 
-- **WHEN** `providers` 列表中某名字在 `Config.provider` 中不存在
+- **WHEN** `providers` 列表中某名字在已配置的 provider 集合中不存在
 - **THEN** 插件 SHALL 抛出配置错误
 
 ### Requirement: 从 provider 配置收集扁平列表
 
-插件 SHALL 通过 `config` hook 读取 opencode 的 `Config.provider`,过滤出 `options.providers` 列表中的 provider,读取各自的 `baseURL`、`apiKey` 与 `models`(models 对象的 key 列表),收集为扁平 `ProviderEntry[]` 列表(每个 entry 含 key/baseURL/account/models)。key SHALL 去重(相同 key 只保留第一个)。收集的 models 信息用于后续按"接入点 + 模型"分组时过滤。
+插件 SHALL 从 opencode v2 的 provider 配置/元数据中,过滤出 `ctx.options.providers` 列表中的 provider,读取各自的 `baseURL`、`apiKey` 与 `models` 集合,收集为扁平 `ProviderEntry[]` 列表(每个 entry 含 key/baseURL/account/models)。key SHALL 去重(相同 key 只保留第一个)。收集的 models 信息用于后续按"接入点 + 模型"分组时过滤。
 
 #### Scenario: 收集所有 provider 含 models 字段
 
@@ -40,18 +36,18 @@
 
 ### Requirement: 随机选 provider 并替换 key + URL
 
-插件 SHALL 按"接入点(baseURL) + model"自动分组随机选择 provider。请求从哪个已配置 baseURL 发出(经 `findBaseURL` 匹配),就在该 baseURL 下、支持请求 body 中 `model` 字段的 provider 中组成分组,`next(model, originBaseURL)` SHALL 从该分组中随机选一个(跳过熔断中的)。同一 model 但不同 baseURL 的 provider 不组成同一分组,SHALL NOT 跨接入点轮询。将选中 provider 的 key 与 baseURL 同时应用到请求上;同接入点下 baseURL 不变,实际仅替换 Authorization 头。
+插件 SHALL 在 `ctx.session.hook("http.request")` 中按"接入点(baseURL) + model"自动分组随机选择 provider。请求从哪个已配置 baseURL 发出(经 `findBaseURL` 匹配),就在该 baseURL 下、支持请求 body 中 `model` 字段的 provider 中组成分组,`next(model, originBaseURL)` SHALL 从该分组中随机选一个(跳过熔断中的)。同一 model 但不同 baseURL 的 provider 不组成同一分组,SHALL NOT 跨接入点轮询。将选中 provider 的 key 应用到请求 Authorization 头;同接入点下 baseURL 不变,请求 URL 不变。请求 body 为一次性流,SHALL 在克隆或替换后再读取解析。
 
 当请求 body 无法解析、不含 `model` 字段、或该 model 在该接入点无对应 provider 时,SHALL 退化到从该接入点(baseURL)的所有非熔断 provider 中随机选(同接入点池)。SHALL NOT 退化为跨接入点的扁平池全随机。
 
 #### Scenario: 按接入点+模型分组随机选 provider
 
-- **WHEN** fetch 拦截器收到一个 URL 匹配某 ARK baseURL 的请求
+- **WHEN** `http.request` 钩子收到一个 URL 匹配某 ARK baseURL 的请求
 - **AND** 请求 body 的 `model` 字段为 `"deepseek-v4-flash"`
 - **AND** 该 ARK baseURL 下有 4 个 provider 支持 `"deepseek-v4-flash"`
 - **THEN** 插件 SHALL 从该 4 个非熔断 provider 中随机选一个
-- **AND** SHALL 将请求 URL 替换为选中 provider 的 baseURL + 原始路径(同接入点下与原 URL 相同)
 - **AND** SHALL 将 Authorization 头替换为选中 provider 的 key
+- **AND** 请求 URL 保持不变(同接入点)
 
 #### Scenario: 跨接入点不轮询
 
@@ -90,7 +86,7 @@
 
 ### Requirement: 分组内全部熔断时 passthrough
 
-当请求 model 对应且同接入点(baseURL)的分组中所有 provider 都处于熔断状态时,插件 SHALL passthrough 原始请求,不修改 URL 和 headers。SHALL NOT 兜底选择其他接入点支持同 model 的 provider。
+当请求 model 对应且同接入点(baseURL)的分组中所有 provider 都处于熔断状态时,插件 SHALL 在 `http.request` 钩子中 passthrough 原始请求,不修改 URL 和 headers。SHALL NOT 兜底选择其他接入点支持同 model 的 provider。
 
 #### Scenario: 分组内全部熔断
 
@@ -112,7 +108,7 @@
 
 ### Requirement: 429/402 熔断 per-provider
 
-收到 429 或 402 响应时,插件 SHALL 标记该 provider 熔断。429 响应 SHALL 读取响应体区分类型:配额耗尽(`error.message` 含 `exceeded` 与 `quota`,不区分大小写)使用 `quotaCooldownMs`(默认 3600000ms,可配)熔断;其他 429 使用 `cooldownMs`(默认 60000ms,可配)熔断;无法读取或解析响应体时 SHALL 按 `cooldownMs` 处理。402 响应(余额不足)SHALL 无条件使用 `quotaCooldownMs` 熔断,不读取响应体分类。熔断到期后自动恢复。读取 429 响应体 SHALL 使用 `response.clone()` 以保证原始 response 不被消费。
+插件 SHALL 在 `ctx.session.hook("http.response")` 中检查响应状态,收到 429 或 402 时 SHALL 标记该请求所用 provider 熔断。429 响应 SHALL 读取响应体区分类型:配额耗尽(`error.message` 含 `exceeded` 与 `quota`,不区分大小写)使用 `quotaCooldownMs`(默认 3600000ms,可配)熔断;其他 429 使用 `cooldownMs`(默认 60000ms,可配)熔断;无法读取或解析响应体时 SHALL 按 `cooldownMs` 处理。402 响应(余额不足)SHALL 无条件使用 `quotaCooldownMs` 熔断,不读取响应体分类。熔断到期后自动恢复。读取响应体 SHALL 克隆或替换一次性流,以保证原始 response 不被消费。
 
 #### Scenario: 请求太快 429 标记短熔断
 

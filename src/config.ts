@@ -1,6 +1,8 @@
 import type { ParsedOptions, ProviderEntry } from "./types"
+import { existsSync, readFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
+import { parse } from "jsonc-parser"
 
 /** 默认冷却时长(毫秒),请求太快 429 后该 provider 暂时停用 */
 const DEFAULT_COOLDOWN_MS = 60000
@@ -8,8 +10,13 @@ const DEFAULT_COOLDOWN_MS = 60000
 /** 默认配额耗尽冷却时长(毫秒),配额用完后该 provider 长时间停用 */
 const DEFAULT_QUOTA_COOLDOWN_MS = 3600000
 
+/** 全局配置文件名(opencode 配置文件,含注释与尾逗号) */
+const CONFIG_FILENAMES = ["opencode.json", "opencode.jsonc"] as const
+
 /**
  * 解析插件 options:只校验 providers(必填非空)与可选项。
+ *
+ * v2 下 options 来自 `{package, options}` 对象,经 `ctx.options` 传入 setup。
  *
  * @param options - 来自 opencode.jsonc 的 plugin options
  * @returns 解析后的配置(providers + 可选项)
@@ -68,17 +75,66 @@ function expandHome(p: string): string {
 }
 
 /**
- * 从 opencode Config.provider 收集所有指定 provider 的 key + baseURL,返回扁平列表。
+ * opencode 配置文件里 provider 段的结构(兼容 v2 的 provider 定义)。
+ */
+export interface ProviderConfigSection {
+  provider?: Record<string, { options?: { apiKey?: string; baseURL?: string }; models?: Record<string, unknown> }>
+}
+
+/**
+ * 读取并解析 opencode 配置文件(JSONC)的 provider 段。
+ *
+ * v2 不再通过 config hook 暴露合并后的 Config,v2 的 provider 元数据(`ctx.provider`)
+ * 也不含 apiKey(属凭证/连接层)。因此参与轮询的 provider 定义(含 apiKey/baseURL/models)
+ * 直接从配置文件读取(全局 + 插件所在位置的配置,项目级覆盖全局)。
+ *
+ * @param paths - 候选配置文件路径(按优先级,后读的覆盖先读的同名 provider)
+ * @returns 合并后的 provider 段;解析失败返回空对象(不抛错,由 collectProviders 报 provider 缺失)
+ */
+export function loadProviderConfig(paths: string[]): ProviderConfigSection {
+  const merged: ProviderConfigSection = { provider: {} }
+  for (const file of paths) {
+    if (!existsSync(file)) continue
+    let root: unknown
+    try {
+      root = parse(readFileSync(file, "utf8"))
+    } catch {
+      continue
+    }
+    const section = root as ProviderConfigSection | null
+    if (!section || typeof section !== "object" || !section.provider || typeof section.provider !== "object") continue
+    for (const [name, def] of Object.entries(section.provider)) {
+      if (def && typeof def === "object") merged.provider![name] = def
+    }
+  }
+  return merged
+}
+
+/**
+ * 生成候选配置文件路径:全局配置目录 + 插件所在位置,后读覆盖先读。
+ *
+ * @param globalConfigDir - 全局配置目录(如 ~/.config/opencode)
+ * @param locationDir - 插件加载位置目录(如项目根)
+ */
+export function configFileCandidates(globalConfigDir: string, locationDir?: string): string[] {
+  const globalFiles = CONFIG_FILENAMES.map((f) => join(globalConfigDir, f))
+  const locationFiles = locationDir ? CONFIG_FILENAMES.map((f) => join(locationDir, f)) : []
+  // 项目级在后,同名 provider 覆盖全局
+  return [...globalFiles, ...locationFiles]
+}
+
+/**
+ * 从 opencode 配置文件收集所有指定 provider 的 key + baseURL,返回扁平列表。
  *
  * 不按 baseURL 分组。key 去重(相同 key 只保留第一个)。
  *
- * @param config - opencode Config(config hook 收到)
+ * @param config - 合并后的 provider 段(loadProviderConfig 结果)
  * @param providers - 参与轮询的 provider 名列表
  * @returns ProviderEntry[] 扁平列表
  * @throws provider 名不存在或缺 baseURL/apiKey 时抛出
  */
 export function collectProviders(
-  config: { provider?: Record<string, { options?: { apiKey?: string; baseURL?: string }; models?: Record<string, unknown> }> },
+  config: ProviderConfigSection,
   providers: string[],
 ): ProviderEntry[] {
   const providerMap = config.provider

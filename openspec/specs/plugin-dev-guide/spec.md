@@ -1,3 +1,11 @@
+# plugin-dev-guide Specification
+
+## Purpose
+
+插件开发指南文章的内容契约：约束文章对插件加载方式、插件 API、hooks、依赖管理与安装排障的覆盖范围，以及格式与语言合规要求。
+
+## Requirements
+
 ### Requirement: 覆盖插件加载机制
 
 文章 SHALL 系统讲解 opencode 插件的三种加载方式,每种 SHALL 说明配置写法、安装位置、是否传 options、适用场景。

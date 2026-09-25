@@ -130,10 +130,13 @@ export function buildSpawn(
 }
 
 /**
- * 从配置文本抽取 plugin 条目中的 planStats.accounts 账号映射。
+ * 从配置文本抽取插件条目中的 planStats.accounts 账号映射。
  *
- * opencode.jsonc 的 `plugin` 为数组:元素要么是插件名字符串,要么是 `[name, options]`
- * 二元数组。遍历所有元素,收集 options.planStats.accounts 非空的映射。
+ * 兼容两种配置形态:
+ * - v2 `plugins` 数组:元素为插件名/路径字符串,或 `{"package": ..., "options": {...}}` 对象
+ * - v1 `plugin` 数组:元素为插件名字符串,或 `[name, options]` 二元数组(迁移过渡期兼容)
+ *
+ * 遍历所有元素,收集 options.planStats.accounts 非空的映射。
  *
  * @param text - 配置文件原文(允许 JSONC 注释/尾逗号)
  * @returns 账号清单;找不到有效配置时返回空数组
@@ -142,21 +145,37 @@ export function extractAccounts(text: string): AccountEntry[] {
   const errors: ParseError[] = []
   const root = parse(text, errors, { allowTrailingComma: true, disallowComments: false })
   if (errors.length > 0) return []
-  const plugin = (root as { plugin?: unknown } | null)?.plugin
-  if (!Array.isArray(plugin)) return []
 
   const out: AccountEntry[] = []
-  for (const item of plugin) {
-    if (!Array.isArray(item) || item.length < 2) continue
-    const options = item[1] as { planStats?: { accounts?: Record<string, unknown> } } | null
-    const accounts = options?.planStats?.accounts
-    if (!accounts || typeof accounts !== "object") continue
+  const collect = (options: unknown): void => {
+    const accounts = (options as { planStats?: { accounts?: Record<string, unknown> } } | null)?.planStats?.accounts
+    if (!accounts || typeof accounts !== "object") return
     for (const [name, home] of Object.entries(accounts)) {
       if (typeof name !== "string" || name.length === 0) continue
       if (typeof home !== "string" || home.length === 0) continue
       out.push({ name, home: expandHome(home) })
     }
   }
+
+  // v2:plugins 数组(字符串条目无 options,跳过;对象条目读 options)
+  const plugins = (root as { plugins?: unknown } | null)?.plugins
+  if (Array.isArray(plugins)) {
+    for (const item of plugins) {
+      if (!item || typeof item !== "object" || Array.isArray(item)) continue
+      const entry = item as { package?: unknown; options?: unknown }
+      collect(entry.options)
+    }
+  }
+
+  // v1:plugin 数组(元组形态兼容,迁移过渡期)
+  const plugin = (root as { plugin?: unknown } | null)?.plugin
+  if (Array.isArray(plugin)) {
+    for (const item of plugin) {
+      if (!Array.isArray(item) || item.length < 2) continue
+      collect(item[1])
+    }
+  }
+
   return out
 }
 

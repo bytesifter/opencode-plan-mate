@@ -1,3 +1,11 @@
+# self-contained-build Specification
+
+## Purpose
+
+自包含构建与分发能力：保证 dist 构建产物在无插件运行时依赖下可被 opencode 正常加载，npm 发布包含预构建产物，类型依赖仅存于 devDependencies。
+
+## Requirements
+
 ### Requirement: 构建产物自包含
 
 插件 `dist/index.js` SHALL 内联 `@opencode-ai/plugin` 的 `tool()` 函数及其依赖(`zod`),运行时 SHALL NOT 要求 `node_modules` 中存在 `@opencode-ai/plugin`。

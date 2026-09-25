@@ -2,13 +2,13 @@
 
 ## 轮询机制
 
-插件对多个账号的 API key 做**随机轮询**：每次请求随机选一个 provider，替换 Authorization 头和请求 URL。按**接入点（baseURL）+ 模型**分组轮询，同接入点内随机，不跨接入点。
+插件对多个账号的 API key 做**随机轮询**：每次请求随机选一个 provider，替换 Authorization 头。按**接入点（baseURL）+ 模型**分组轮询，同接入点内随机，不跨接入点（同接入点 baseURL 不变，URL 不变，仅换 key）。
 
 ```
-请求进入（opencode 原生）
+请求进入（opencode v2 会话）
     │
     ▼
-fetch-patch 拦截
+ctx.session.hook("http.request") 钩子
     │
     ├─ URL 不匹配任何已配置 baseURL ──► passthrough（opencode 原生请求）
     │
@@ -16,10 +16,13 @@ fetch-patch 拦截
 定位接入点（原始 baseURL）
     │
     ▼
-该接入点下、支持该模型（解析 body 的 model）的 provider 中随机选一个
+该接入点下、支持该模型（解析请求 body 的 model）的 provider 中随机选一个
     │
     ▼
-替换 Authorization 头 + URL，发出请求
+替换 Authorization 头（URL 不变），记录 sessionID-provider 关联
+    │
+    ▼
+ctx.session.hook("http.response") 钩子：检查 429/402，触发熔断
 ```
 
 ## 429/402 熔断
@@ -31,7 +34,7 @@ fetch-patch 拦截
 
 ## 用量统计（plan_mate_stats）
 
-插件通过 `event` hook 按天累计请求数与 token 消耗（input/output/reasoning/cache），内存累积 60 秒把增量**追加式**写入按日 JSONL（多进程并发不互相覆盖）。`plan_mate_stats` 工具聚合所有进程的数据。
+插件通过 `ctx.event.subscribe()` 订阅 `message.updated` 事件，按天累计请求数与 token 消耗（input/output/reasoning/cache），内存累积 60 秒把增量**追加式**写入按日 JSONL（多进程并发不互相覆盖）。`plan_mate_stats` 工具聚合所有进程的数据。
 
 对 LLM 说「看轮询统计」，LLM 会调用 `plan_mate_stats` 工具，返回近 7 天 ASCII 柱状图：
 

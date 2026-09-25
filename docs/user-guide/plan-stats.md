@@ -27,16 +27,19 @@
 在插件 options 中声明账号映射（显示名 → 独立 arkcli HOME 目录）：
 
 ```jsonc
-"plugin": [
-  ["file:///path/to/opencode-plan-mate", {
-    "providers": ["account-a", "account-b"],
-    "planStats": {
-      "accounts": {
-        "account-a": "~/.arkcli-accounts/account-a",
-        "account-b": "~/.arkcli-accounts/account-b"
+"plugins": [
+  {
+    "package": "file:///path/to/opencode-plan-mate",
+    "options": {
+      "providers": ["account-a", "account-b"],
+      "planStats": {
+        "accounts": {
+          "account-a": "~/.arkcli-accounts/account-a",
+          "account-b": "~/.arkcli-accounts/account-b"
+        }
       }
     }
-  }]
+  }
 ]
 ```
 

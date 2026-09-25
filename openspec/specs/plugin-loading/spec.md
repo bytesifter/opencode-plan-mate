@@ -1,3 +1,11 @@
+# plugin-loading Specification
+
+## Purpose
+
+插件加载与生命周期能力：定义插件在 opencode 中的声明形态、导出格式、模块共享状态与钩子/工具注册行为，是插件可加载、可使用的行为契约。
+
+## Requirements
+
 ### Requirement: 插件以路径形式声明
 
 `~/.config/opencode/opencode.jsonc` 的 `plugin` 数组中,`opencode-round-robin` SHALL 以 `file:///` 路径形式声明(而非包名),使 `resolvePluginTarget` 走 `resolvePathPluginTarget` 直接解析,绕过 cache 目录的 `npm.add()` 查找。
