@@ -1,0 +1,27 @@
+# validate-article 源注册表（skill 全局，随 skill 部署）
+#
+# 每个源定义一个校验/评审的判定来源：
+#   type: local —— 项目本地规范，经项目根 AGENTS.md 运行时定位适用规范（默认源）
+#   type: url   —— 外部规范/评分网页，运行时 webfetch 抓取后走同一抽取管线
+#
+# 源选择：默认仅 norm；--sources <names> 选择子集；--sources all = norm + 全部 url 源。
+# 每个选中源独立执行完整校验、独立出报告，不混合分数、不汇总。
+sources:
+  norm:
+    type: local
+    desc: 项目本地规范（默认源）。findings + 红线 hard-fail，无外部评分。
+
+  csdn:
+    type: url
+    url: https://blog.csdn.net/blogdevteam/article/details/161886750
+    desc: CSDN《标注专家质量判定标准》（2026-06 官方通告）。定义四维权重与四级分级（含 100 分制扣分表），可打分。注意：其红线是标注员行为红线，抽取时判定不适用于文章评审。
+
+  csdn-rules:
+    type: url
+    url: https://blog.csdn.net/blogdevteam/article/details/113122012
+    desc: CSDN《社区内容创作规范》（2024.10.31 更新）。发布红线清单（1-10 类），无评分元数据，findings-only。
+
+  # juejin:
+  #   type: url
+  #   url: https://juejin.cn/book/m/6844733795329900551/section/6844733795380232200
+  #   desc: 掘金《社区内容发布规范》（掘金小册）。暂未注册：页面为 JS 渲染，webfetch 解析不到正文（2026-09-26 实测）。可抓后再启用。
