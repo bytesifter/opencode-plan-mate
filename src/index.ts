@@ -7,7 +7,7 @@ import { handleHttpRequest, handleHttpResponse, type HttpHookCallbacks } from ".
 import { StatsCollector, aggregateStats } from "./stats"
 import { resolveStepUsage, attributeStep, isReplayedEvent, isLocationMatch } from "./event-adapter"
 import { renderChart } from "./chart"
-import { collectPlanQuotas, defaultSpawn, renderPlanChart } from "./quota"
+import { collectPlanQuotas, collectAuthStatus, defaultSpawn, renderPlanChart } from "./quota"
 import { Logger, tail } from "./logger"
 import type { EventContext } from "./types"
 
@@ -20,6 +20,9 @@ let globalStatsDir: string | null = null
 let globalLogger: Logger | null = null
 let globalPool: ProviderPool | null = null
 let hooksRegistered = false
+
+/** SSO 保活定时器(模块级单例,多加载位置只注册一次) */
+let keepaliveTimer: ReturnType<typeof setInterval> | null = null
 
 /** 插件启动时刻:回放过滤依据(忽略 created 早于该时刻的历史 durable 事件) */
 let pluginStartTime = 0
@@ -114,11 +117,42 @@ export default Plugin.define({
                 '未配置 planStats.accounts。请在插件 options 添加,例如 {"planStats":{"accounts":{"账号A":"~/.arkcli-accounts/a"}}}',
             }
           }
-          const quotas = await collectPlanQuotas(accounts, defaultSpawn)
-          return { content: renderPlanChart(quotas) }
+          // 前置探活:过期/未登录账号直接标注友好提示,健康账号才走配额取数(避免白跑 usage plan)
+          const statuses = await collectAuthStatus(accounts, defaultSpawn)
+          const okAccounts: Record<string, string> = {}
+          const expiryRows: { provider: string; kind: string; subscribed: boolean; periods: [] }[] = []
+          for (const s of statuses) {
+            if (s.ok) {
+              okAccounts[s.account] = accounts[s.account]
+            } else {
+              expiryRows.push({
+                provider: s.account,
+                kind: "coding-plan",
+                subscribed: false,
+                periods: [],
+                error: s.error ?? "SSO 状态未知",
+              } as never)
+            }
+          }
+          const quotas =
+            Object.keys(okAccounts).length > 0 ? await collectPlanQuotas(okAccounts, defaultSpawn) : []
+          // 保持配置的账号展示顺序:过期行 + 配额行按 accounts 原始顺序合并
+          const order = Object.keys(accounts)
+          const merged = [...expiryRows, ...quotas].sort(
+            (a, b) => order.indexOf(a.provider) - order.indexOf(b.provider),
+          )
+          return { content: renderPlanChart(merged) }
         },
       })
     })
+
+    // SSO 保活:模块级单例定时器(首个实例注册),定期对账号执行 auth status 保鲜;失败仅标记,不中断
+    const ssoAccounts = opts.planStats?.accounts
+    if (!keepaliveTimer && ssoAccounts && Object.keys(ssoAccounts).length > 0) {
+      keepaliveTimer = setInterval(() => {
+        void collectAuthStatus(ssoAccounts, defaultSpawn).catch(() => undefined)
+      }, opts.ssoKeepaliveMs ?? 43200000)
+    }
 
     // 事件订阅:session.step.ended / session.step.failed 的 token 归因与日志(替代 V1 event hook)
     const controller = new AbortController()
@@ -138,6 +172,10 @@ export default Plugin.define({
 
     return () => {
       controller.abort()
+      if (keepaliveTimer) {
+        clearInterval(keepaliveTimer)
+        keepaliveTimer = null
+      }
       globalStats?.stop()
     }
   },

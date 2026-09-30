@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process"
-import type { PlanPeriod, PlanQuota, QuotaAdapter, SpawnExecutor, SpawnResult } from "./types"
+import type { PlanPeriod, PlanQuota, QuotaAdapter, SpawnExecutor, SpawnResult, AuthStatus } from "./types"
 import { bar, pad } from "./chart"
 import { num } from "./util"
 
@@ -131,6 +131,80 @@ export async function collectPlanQuotas(
     }),
   )
   return results
+}
+
+/**
+ * 账号 SSO 登录态保活/探活:以该账号隔离 HOME 执行 `arkcli auth status --format json`。
+ *
+ * STS 有效期极短(分钟级),该调用在 STS 过期时会自动用 refresh_token 续期
+ * (`control_plane_auth.reason=identity_sts_refreshed`),故定期调用即保鲜。
+ * 命令报错(refresh_token invalid / 未登录 / arkcli 不可用)时返回 ok=false + 分类错误。
+ *
+ * @param account - 账号显示名
+ * @param home - 该账号隔离的 arkcli HOME 目录
+ * @param exec - 子进程执行器(测试注入 fake)
+ */
+export async function authStatus(account: string, home: string, exec: SpawnExecutor): Promise<AuthStatus> {
+  const res = await exec(
+    "arkcli",
+    ["auth", "status", "--format", "json"],
+    { env: { ...CALLER_ENV, HOME: home, USERPROFILE: home }, timeoutMs: DEFAULT_TIMEOUT_MS },
+  )
+  if (res.timedOut) {
+    return { account, ok: false, error: "auth status 超时" }
+  }
+  if (res.exitCode === null) {
+    return { account, ok: false, error: classifyStartupError(res.stderr) }
+  }
+  if (res.exitCode !== 0) {
+    return { account, ok: false, error: classifyAuthError(`${res.stdout}\n${res.stderr}`) }
+  }
+  try {
+    const parsed = JSON.parse(res.stdout) as { control_plane_auth?: { status?: string; reason?: string; sts_expires_at_ms?: number } }
+    const cpa = parsed.control_plane_auth
+    if (cpa?.status === "ok") {
+      return {
+        account,
+        ok: true,
+        reason: typeof cpa.reason === "string" ? cpa.reason : undefined,
+        stsExpiresAtMs: typeof cpa.sts_expires_at_ms === "number" ? cpa.sts_expires_at_ms : undefined,
+      }
+    }
+    // 退出码 0 但 control_plane_auth 非 ok:按输出文本分类
+    return { account, ok: false, error: classifyAuthError(res.stdout) }
+  } catch {
+    return { account, ok: false, error: "auth status 输出解析失败" }
+  }
+}
+
+/**
+ * 并发保活/探活所有账号,单账号失败隔离。
+ *
+ * @param accounts - 账号映射(显示名 → 隔离 HOME)
+ * @param exec - 子进程执行器
+ */
+export async function collectAuthStatus(
+  accounts: Record<string, string>,
+  exec: SpawnExecutor,
+): Promise<AuthStatus[]> {
+  return Promise.all(
+    Object.entries(accounts).map(async ([account, home]) => {
+      try {
+        return await authStatus(account, home, exec)
+      } catch (e) {
+        return { account, ok: false, error: errMsg(e) }
+      }
+    }),
+  )
+}
+
+/** SSO 保活错误分类:refresh_token 失效 → "SSO 已过期"并给重登指引;其余复用现有分类 */
+function classifyAuthError(text: string): string {
+  const t = text.toLowerCase()
+  if (t.includes("refresh_token") && t.includes("invalid")) {
+    return "SSO 已过期,请运行 bun scripts/login-arkcli-accounts.ts 重登"
+  }
+  return classifyError(text)
 }
 
 /**
