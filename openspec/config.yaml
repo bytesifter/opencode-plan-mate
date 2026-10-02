@@ -1,1 +1,32 @@
 schema: spec-driven
+
+context: |
+  # opencode-plan-mate —— opencode v2 插件项目
+
+  ## 目录结构
+  - src/            插件核心源码（TypeScript，模块化）
+  - tests/          单元测试（Bun 原生测试，与 src 模块一一对应）
+  - scripts/        运维辅助脚本（登录等）
+  - docs/           用户文档（getting-started / user-guide / technical）
+  - articles/       对外技术文章
+  - dist/           构建产物（bun build 输出，不手改）
+  - openspec/       OpenSpec 变更与规范（changes / specs / config.yaml）
+  - dev-notes/      迭代层文档（治理报告等）
+
+  ## 放置规则
+  - 源码放 src/，按关注域拆模块（配置/轮询/统计/配额/日志/事件适配等）
+  - 测试放 tests/，文件名与 src/ 对应（*.test.ts），测试是持久资产不经过临时目录
+  - 运维脚本放 scripts/，用户文档放 docs/（按用途分子目录），文章放 articles/
+  - 构建产物进 dist/（只读，由 bun run build 生成）
+
+  ## 禁止区
+  - 不直接在仓库根新增散落源码文件（入口 server.js 除外）
+  - 不改 dist/ 内构建产物
+  - 临时文件不进仓库（走系统临时目录或 gitignore 覆盖）
+
+  ## 协议与技术栈
+  - 语言/运行时：TypeScript + Bun（bun test / bunx tsc --noEmit / bun build）
+  - 插件模型：opencode v2 插件 API（@opencode/plugin，Plugin.define + setup(ctx)）
+  - 依赖：jsonc-parser（唯一运行时依赖，其余内联进自包含构建）
+  - 包类型：ESM（type: module），入口 dist/index.js，目录包 server.js 作为 v2 server 入口
+  - 数据面：http.request / http.response 钩子做拦截轮询与熔断，ctx.event.subscribe 做用量统计
