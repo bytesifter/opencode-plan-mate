@@ -10,7 +10,7 @@
 
 ### 决策一：官方 quota 必须依赖 arkcli（不能直连控制面）
 
-实测验证：`GetCodingPlanUsage` 等控制面接口走 OpenTOP 网关（`open.volcengineapi.com`），仅接受该账号的 SSO/AK-SK 签名；Coding Plan API key（`ark-...`）是数据面凭证，直连被拒（`InvalidAuthorization`），arkcli 亦拒绝用 `--api-key` 查控制面。
+实测验证：`GetCodingPlanUsage` 等控制面接口走 OpenTOP 网关（`open.volcengineapi.com`），**仅接受该账号的 SSO STS**（apikey 实测被拒 `requires Volcengine Ark SSO STS`，长效 AK/SK 亦不可行——arkcli AK/SK 登录通道已关且接口契约不认）；Coding Plan API key（`ark-...`）是数据面凭证，直连被拒（`InvalidAuthorization`），arkcli 亦拒绝用 `--api-key` 查控制面。
 
 - 备选：插件内直连 OpenTOP（需 sigv4 签名 + STS）——重实现且不可行
 - 决定：插件通过子进程运行 `arkcli usage plan`，复用 arkcli 的登录态与取数逻辑
@@ -64,7 +64,7 @@ renderPlanChart(PlanQuota[])   ← ASCII 表 + percent 柱 + 重置时间
 
 | 备选 | 放弃原因 |
 |------|---------|
-| 插件直连 `GetCodingPlanUsage`（HTTP + bearer） | 控制面只认 SSO/AK-SK，coding key 直连被拒 |
+| 插件直连 `GetCodingPlanUsage`（HTTP + bearer） | 控制面只认 SSO STS（apikey/AK-SK 实测均不可行），coding key 直连被拒 |
 | 共享 arkcli 登录态 + `--profile` 列表 | 单身份模型下所有 profile 同一账号，退化为同一份 plan |
 | 用插件自记录实际用量替代官方 quota | 非官方数据，不满足「看额度」需求（`plan_mate_stats` 已覆盖实际用量视角） |
 | 登录时每账号重登（不隔离） | 每次查询需真人授权，不可自动化；隔离 HOME 为一次性成本 |

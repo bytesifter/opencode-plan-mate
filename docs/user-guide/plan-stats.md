@@ -109,16 +109,6 @@ arkcli usage plan --product coding-plan --format json
 
 > Windows 注意：不要写成 `$env:USERPROFILE = "$env:USERPROFILE\.arkcli-accounts\account-a"` 后在下一个账号里继续用 `$env:USERPROFILE` 拼路径——`USERPROFILE` 已被覆盖，会拼出 `...\account-a\.arkcli-accounts\account-b\...` 的嵌套目录。始终用上面的 `$base` 基准变量。
 
-## SSO 保活
-
-火山 SSO 的 refresh_token 寿命约 48 小时，`plan_stats` 依赖它签发 STS 调控制面，过期后 6 个账号会一起失效（需重新登录）。插件提供 SSO 保活与过期提示来缓解：
-
-- **后台保活**：插件默认每 12 小时对每个账号的隔离 HOME 执行一次 `arkcli auth status`。STS 有效期只有分钟级，12 小时间隔必然触发 refresh_token 自动续期（`reason=identity_sts_refreshed`），从而维持登录态。间隔可配 `ssoKeepaliveMs`（毫秒，默认 `43200000`）。
-- **过期提示**：`plan_stats` 调用前先探活，SSO 过期的账号行会直接标注「SSO 已过期，请运行 `bun scripts/login-arkcli-accounts.ts` 重登」，而不是先失败再报长错误；健康账号照常返回配额。
-- **机制说明**：`auth status` 在 STS 过期时会用 refresh_token 换新 STS（实测 `identity_sts_refreshed`），且比 `usage plan` 轻量（不拉配额数据），因此用作保活触发器。
-
-> 注意：若服务端对 refresh_token 设绝对有效期（刷新不续期），保活无法无限延长寿命，此时退化为「提前探活 + 过期提示」，不白跑。两种情形下方案均有效。
-
 ## 用法
 
 对 LLM 说「看套餐配额」，LLM 会调用 `plan_stats` 工具，返回类似：
@@ -140,9 +130,11 @@ account-b         —                 —                 —
 
 ## FAQ 与排障
 
+> **为什么没有 SSO 保活？** 火山 SSO 的 refresh_token 是**服务端绝对有效期**（约 48 小时，实测约 46 小时即失效），刷新不轮换、不续期（sliding 不成立），因此任何后台定期执行 `arkcli auth status` 的"保活"都无法延长登录态——**此方案已实测失败并永久移除**。且 CodingPlan 配额接口仅接受 SSO STS（apikey 与长效 AK/SK 实测均不可行，AK/SK 登录通道已关），不存在绕开 SSO 的替代凭证。`plan_stats` 采用按需查询：SSO 过期时由配额查询失败标注过期错误（如「SSO 已过期，需重登」）。请勿重新尝试保活或 AK/SK 方案。
+
 | 现象 | 原因 | 处理 |
 |------|------|------|
-| 行显示「未登录（需 arkcli auth login volc-sso）」 | 该账号在对应 HOME 未完成 SSO 登录 | 在该 HOME 执行 `--no-browser` 两段式登录 |
+| 行显示「SSO 已过期 / 未登录」 | 该账号在对应 HOME 的 SSO 登录态已过期（refresh_token 约 48h 绝对有效期）或未登录 | 运行 `bun scripts/login-arkcli-accounts.ts` 全量重登 |
 | 行显示「arkcli 不可用」 | 本机未安装 arkcli 或命令不可执行 | 安装 arkcli |
 | 行显示「未订阅/无套餐」 | 该账号未持有 Coding Plan | 确认账号是否订阅 |
 | 行显示「usage plan 未返回 coding-plan 桶」 | arkcli 输出与预期结构不符 | 人工核对：POSIX 用 `HOME=<该账号> arkcli usage plan --product coding-plan --format json`；Windows 用 `$env:USERPROFILE="<该账号>"; arkcli usage plan --product coding-plan --format json` |

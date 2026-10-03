@@ -56,6 +56,10 @@
 - **绝对 48h**（刷新不续期）→ 保活退化为"提前探活"：每 12h 探一次，过期第一时间被标记并提示重登（治标），不白跑
 - 两种结局下方案均成立，无需预先站队；被动观察实验（9/30 登录为 baseline）持续验证 sliding 是否成立
 
+### 5.3 观察结论（2026-10-02 定论）
+
+sliding **不成立**：以 9/30 23:02 全量登录为 baseline，即使插件保活定时器（12h 间隔）持续运行，10/2 21:15 手动 `arkcli auth status` 仍返回 `refresh_token is invalid`（约 46h 即失效，短于宣传的 48h）。refresh_token 为**服务端绝对有效期**，刷新不轮换、不续期，STS 续期无法延长登录态寿命——保活只能"提前探活"，无法维持登录态。同时验证替代通道不可行：CodingPlan 配额接口 `GetCodingPlanUsage` 仅接受 SSO STS（apikey 实测被拒 `requires Volcengine Ark SSO STS`），长效 AK/SK 不可行（arkcli AK/SK 登录通道已关、接口契约不认）。据此，保活能力已随 change `remove-plan-stats-sso-keepalive` 永久移除，spec 固化禁止实现。
+
 ## Risks / Trade-offs
 
 - [保活调用可能自身触发 429] → 频率 12h/账号、每天 12 次控制面调用，远低于实测 429 阈值（2781 请求仅 3 次）；若未来 429 增多可调大 `ssoKeepaliveMs`。

@@ -9186,7 +9186,6 @@ var ParseErrorCode;
 // src/config.ts
 var DEFAULT_COOLDOWN_MS = 60000;
 var DEFAULT_QUOTA_COOLDOWN_MS = 3600000;
-var DEFAULT_SSO_KEEPALIVE_MS = 43200000;
 var CONFIG_FILENAMES = ["opencode.json", "opencode.jsonc"];
 function parseOptions(options) {
   if (!options) {
@@ -9210,8 +9209,7 @@ function parseOptions(options) {
     statsDir: typeof options.statsDir === "string" ? options.statsDir : undefined,
     logPath: typeof options.logPath === "string" ? options.logPath : undefined,
     logDir: typeof options.logDir === "string" ? options.logDir : undefined,
-    planStats: parsePlanStats(options.planStats),
-    ssoKeepaliveMs: typeof options.ssoKeepaliveMs === "number" && options.ssoKeepaliveMs > 0 ? options.ssoKeepaliveMs : DEFAULT_SSO_KEEPALIVE_MS
+    planStats: parsePlanStats(options.planStats)
   };
 }
 function parsePlanStats(raw) {
@@ -9879,50 +9877,6 @@ async function collectPlanQuotas(accounts, exec, registry = adapters) {
   }));
   return results;
 }
-async function authStatus(account, home, exec) {
-  const res = await exec("arkcli", ["auth", "status", "--format", "json"], { env: { ...CALLER_ENV, HOME: home, USERPROFILE: home }, timeoutMs: DEFAULT_TIMEOUT_MS });
-  if (res.timedOut) {
-    return { account, ok: false, error: "auth status 超时" };
-  }
-  if (res.exitCode === null) {
-    return { account, ok: false, error: classifyStartupError(res.stderr) };
-  }
-  if (res.exitCode !== 0) {
-    return { account, ok: false, error: classifyAuthError(`${res.stdout}
-${res.stderr}`) };
-  }
-  try {
-    const parsed = JSON.parse(res.stdout);
-    const cpa = parsed.control_plane_auth;
-    if (cpa?.status === "ok") {
-      return {
-        account,
-        ok: true,
-        reason: typeof cpa.reason === "string" ? cpa.reason : undefined,
-        stsExpiresAtMs: typeof cpa.sts_expires_at_ms === "number" ? cpa.sts_expires_at_ms : undefined
-      };
-    }
-    return { account, ok: false, error: classifyAuthError(res.stdout) };
-  } catch {
-    return { account, ok: false, error: "auth status 输出解析失败" };
-  }
-}
-async function collectAuthStatus(accounts, exec) {
-  return Promise.all(Object.entries(accounts).map(async ([account, home]) => {
-    try {
-      return await authStatus(account, home, exec);
-    } catch (e) {
-      return { account, ok: false, error: errMsg(e) };
-    }
-  }));
-}
-function classifyAuthError(text) {
-  const t = text.toLowerCase();
-  if (t.includes("refresh_token") && t.includes("invalid")) {
-    return "SSO 已过期,请运行 bun scripts/login-arkcli-accounts.ts 重登";
-  }
-  return classifyError(text);
-}
 function renderPlanChart(quotas) {
   const hasData = quotas.some((q) => q.periods.length > 0);
   const hasError = quotas.some((q) => !!q.error);
@@ -10111,7 +10065,6 @@ var globalStatsDir = null;
 var globalLogger = null;
 var globalPool = null;
 var hooksRegistered = false;
-var keepaliveTimer = null;
 var pluginStartTime = 0;
 var pluginDirectory = "";
 var corrMap = new Map;
@@ -10178,37 +10131,11 @@ var src_default = define({
               content: '未配置 planStats.accounts。请在插件 options 添加,例如 {"planStats":{"accounts":{"账号A":"~/.arkcli-accounts/a"}}}'
             };
           }
-          const statuses = await collectAuthStatus(accounts, defaultSpawn);
-          const okAccounts = {};
-          const expiryRows = [];
-          for (const s of statuses) {
-            if (s.ok) {
-              okAccounts[s.account] = accounts[s.account];
-            } else {
-              expiryRows.push({
-                provider: s.account,
-                kind: "coding-plan",
-                subscribed: false,
-                periods: [],
-                error: s.error ?? "SSO 状态未知"
-              });
-            }
-          }
-          const quotas = Object.keys(okAccounts).length > 0 ? await collectPlanQuotas(okAccounts, defaultSpawn) : [];
-          const order = Object.keys(accounts);
-          const merged = [...expiryRows, ...quotas].sort((a, b) => order.indexOf(a.provider) - order.indexOf(b.provider));
-          return { content: renderPlanChart(merged) };
+          const quotas = await collectPlanQuotas(accounts, defaultSpawn);
+          return { content: renderPlanChart(quotas) };
         }
       });
     });
-    const ssoAccounts = opts.planStats?.accounts;
-    if (!keepaliveTimer && ssoAccounts && Object.keys(ssoAccounts).length > 0) {
-      keepaliveTimer = setInterval(() => {
-        collectAuthStatus(ssoAccounts, defaultSpawn).catch(() => {
-          return;
-        });
-      }, opts.ssoKeepaliveMs ?? 43200000);
-    }
     const controller = new AbortController;
     (async () => {
       const resolveProvider = async (sessionID) => {
@@ -10225,10 +10152,6 @@ var src_default = define({
     })();
     return () => {
       controller.abort();
-      if (keepaliveTimer) {
-        clearInterval(keepaliveTimer);
-        keepaliveTimer = null;
-      }
       globalStats?.stop();
     };
   }

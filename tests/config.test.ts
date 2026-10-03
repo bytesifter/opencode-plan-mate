@@ -177,19 +177,3 @@ test("configFileCandidates: 全局在前,位置在后(项目覆盖全局)", () =
 })
 
 
-// ===== ssoKeepaliveMs:SSO 保活间隔 =====
-test("parseOptions: ssoKeepaliveMs 默认 43200000(12h),可自定义", () => {
-  const r = parseOptions({ providers: ["a"] })
-  expect(r.ssoKeepaliveMs).toBe(43200000)
-  const r2 = parseOptions({ providers: ["a"], ssoKeepaliveMs: 3600000 })
-  expect(r2.ssoKeepaliveMs).toBe(3600000)
-})
-
-test("parseOptions: ssoKeepaliveMs 非法值回退默认", () => {
-  const r1 = parseOptions({ providers: ["a"], ssoKeepaliveMs: 0 })
-  expect(r1.ssoKeepaliveMs).toBe(43200000)
-  const r2 = parseOptions({ providers: ["a"], ssoKeepaliveMs: -5 })
-  expect(r2.ssoKeepaliveMs).toBe(43200000)
-  const r3 = parseOptions({ providers: ["a"], ssoKeepaliveMs: "1h" as unknown })
-  expect(r3.ssoKeepaliveMs).toBe(43200000)
-})

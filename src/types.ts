@@ -16,8 +16,6 @@ export interface ParsedOptions {
   logDir?: string
   /** plan_stats 配置(可选):参与官方套餐配额统计的账号映射(显示名 → 独立 arkcli HOME 目录) */
   planStats?: { accounts: Record<string, string> }
-  /** SSO 保活间隔(毫秒,可选,默认 43200000=12h):后台对 planStats.accounts 执行 auth status 保鲜 */
-  ssoKeepaliveMs?: number
 }
 
 /**
@@ -106,7 +104,7 @@ export interface PlanPeriod {
 export interface PlanQuota {
   /** profile 名(行名) */
   provider: string
-  /** 套餐类型(如 coding-plan,未来可扩展 agent-plan / seat...) */
+  /** 套餐类型(coding-plan) */
   kind: string
   /** 是否持有该套餐 */
   subscribed: boolean
@@ -149,20 +147,4 @@ export interface QuotaAdapter {
   supports(account: string): boolean
   /** 取数:以该账号隔离的 arkcli HOME 执行查询,返回官方配额 */
   fetch(account: string, home: string, exec: SpawnExecutor): Promise<PlanQuota>
-}
-
-/**
- * 账号 SSO 登录态保活状态(`arkcli auth status` 的归一化结果)。
- */
-export interface AuthStatus {
-  /** 账号显示名 */
-  account: string
-  /** 控制面认证是否可用(status=ok,含 STS 已自动刷新) */
-  ok: boolean
-  /** 健康时后端返回的刷新原因(如 identity_sts_refreshed / identity_sts_valid) */
-  reason?: string
-  /** 健康时 STS 过期毫秒时间戳 */
-  stsExpiresAtMs?: number
-  /** 不健康时的分类错误(未登录 / SSO 过期 / arkcli 不可用等) */
-  error?: string
 }

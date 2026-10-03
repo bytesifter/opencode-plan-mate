@@ -1,8 +1,6 @@
 import { test, expect } from "bun:test"
 import {
   collectPlanQuotas,
-  collectAuthStatus,
-  authStatus,
   defaultSpawn,
   buildSpawn,
   renderPlanChart,
@@ -279,84 +277,4 @@ test("全部未订阅无错误返回暂无统计数据", () => {
 
 test("空数组返回暂无统计数据", () => {
   expect(renderPlanChart([])).toBe("暂无统计数据")
-})
-
-
-// ===== authStatus:SSO 保活/探活 =====
-const okStatus = (reason = "identity_sts_refreshed") =>
-  JSON.stringify({ control_plane_auth: { status: "ok", reason, sts_expires_at_ms: 1790000000000 } })
-
-test("authStatus 成功(identity_sts_refreshed)带隔离 HOME", async () => {
-  const { exec, calls } = fakeExec({ "/home/volc-a": { exitCode: 0, stdout: okStatus() } })
-  const s = await authStatus("volc-a", "/home/volc-a", exec)
-  expect(s.ok).toBe(true)
-  expect(s.reason).toBe("identity_sts_refreshed")
-  expect(s.stsExpiresAtMs).toBe(1790000000000)
-  expect(s.error).toBeUndefined()
-  // 命令:auth status --format json
-  expect(calls[0].args).toEqual(["auth", "status", "--format", "json"])
-  // env:隔离 HOME + USERPROFILE + 归因
-  expect(calls[0].env?.HOME).toBe("/home/volc-a")
-  expect(calls[0].env?.USERPROFILE).toBe("/home/volc-a")
-  expect(calls[0].env?.ARKCLI_CALLER_NAME).toBe("opencode")
-})
-
-test("authStatus refresh_token invalid 分类为 SSO 已过期(含重登指引)", async () => {
-  const { exec } = fakeExec({
-    "/home/volc-a": {
-      exitCode: 1,
-      stderr: "STS 续期失败: token 交换失败: invalid_request - The request parameter refresh_token is invalid.",
-    },
-  })
-  const s = await authStatus("volc-a", "/home/volc-a", exec)
-  expect(s.ok).toBe(false)
-  expect(s.error).toContain("SSO 已过期")
-  expect(s.error).toContain("login-arkcli-accounts")
-})
-
-test("authStatus 未登录分类", async () => {
-  const { exec } = fakeExec({
-    "/home/volc-a": { exitCode: 1, stderr: "GetCodingPlanUsage requires Volcengine Ark SSO STS, please run arkcli auth login volc-sso" },
-  })
-  const s = await authStatus("volc-a", "/home/volc-a", exec)
-  expect(s.ok).toBe(false)
-  expect(s.error).toContain("未登录")
-})
-
-test("authStatus arkcli 不可用(ENOENT)分类", async () => {
-  const { exec } = fakeExec({ "/home/volc-a": { exitCode: null, stderr: "spawn arkcli ENOENT" } })
-  const s = await authStatus("volc-a", "/home/volc-a", exec)
-  expect(s.ok).toBe(false)
-  expect(s.error).toContain("arkcli 不可用")
-})
-
-test("authStatus 退出码 0 但 status 非 ok 分类", async () => {
-  const { exec } = fakeExec({
-    "/home/volc-a": { exitCode: 0, stdout: JSON.stringify({ control_plane_auth: { status: "error" } }) },
-  })
-  const s = await authStatus("volc-a", "/home/volc-a", exec)
-  expect(s.ok).toBe(false)
-})
-
-test("authStatus 超时标记", async () => {
-  const { exec } = fakeExec({ "/home/volc-a": { exitCode: null, timedOut: true } })
-  const s = await authStatus("volc-a", "/home/volc-a", exec)
-  expect(s.ok).toBe(false)
-  expect(s.error).toContain("超时")
-})
-
-test("collectAuthStatus 多账号并发,单失败隔离", async () => {
-  const { exec } = fakeExec({
-    "/home/volc-a": { exitCode: 0, stdout: okStatus() },
-    "/home/volc-b": { exitCode: 1, stderr: "refresh_token is invalid" },
-    "/home/volc-c": { exitCode: null, stderr: "spawn arkcli ENOENT" },
-  })
-  const list = await collectAuthStatus(
-    { "volc-a": "/home/volc-a", "volc-b": "/home/volc-b", "volc-c": "/home/volc-c" },
-    exec,
-  )
-  expect(list).toHaveLength(3)
-  expect(list.find((s) => s.account === "volc-a")?.ok).toBe(true)
-  expect(list.find((s) => s.account === "volc-b")?.error).toContain("SSO 已过期")
-  expect(list.find((s) => s.account === "volc-c")?.error).toContain("arkcli 不可用")
 })

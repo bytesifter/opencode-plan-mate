@@ -11,9 +11,6 @@ const DEFAULT_COOLDOWN_MS = 60000
 /** 默认配额耗尽冷却时长(毫秒),配额用完后该 provider 长时间停用 */
 const DEFAULT_QUOTA_COOLDOWN_MS = 3600000
 
-/** 默认 SSO 保活间隔(毫秒),12 小时:远大于 STS 寿命(分钟级)保证每次触发刷新,小于 refresh_token 寿命(约 48h)安全窗口 */
-const DEFAULT_SSO_KEEPALIVE_MS = 43200000
-
 /** 全局配置文件名(opencode 配置文件,含注释与尾逗号) */
 const CONFIG_FILENAMES = ["opencode.json", "opencode.jsonc"] as const
 
@@ -50,10 +47,6 @@ export function parseOptions(options: Record<string, unknown> | undefined): Pars
     logPath: typeof options.logPath === "string" ? options.logPath : undefined,
     logDir: typeof options.logDir === "string" ? options.logDir : undefined,
     planStats: parsePlanStats(options.planStats),
-    ssoKeepaliveMs:
-      typeof options.ssoKeepaliveMs === "number" && options.ssoKeepaliveMs > 0
-        ? options.ssoKeepaliveMs
-        : DEFAULT_SSO_KEEPALIVE_MS,
   }
 }
 
