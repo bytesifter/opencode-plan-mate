@@ -45,37 +45,43 @@
 
 行名 = 显示名（key）；HOME 目录决定用哪个账号的登录态。支持 `~` 展开。
 
+> **新增账号**：给 `planStats.accounts` 加一行（显示名 + 独立 HOME 目录），然后对该账号跑一次登录脚本即可（如 `bun scripts/login-arkcli-accounts.ts --only <新账号名>`，脚本会自动创建 HOME 并完成 SSO 登录）。显示名建议与账号真实身份一致，避免标签错位（如历史遗留 `volxc5426` 实际身份是 `vollqh5426`，两者指向同一账号）。
+
 ## 每账号一次性 SSO 登录
 
-每个参与统计的账号都必须在独立 HOME 下完成一次 SSO 登录。**推荐用仓库自带脚本一键全量登录**，也可手工逐个登录（兜底）。
+每个参与统计的账号都必须在独立 HOME 下完成一次 SSO 登录。**推荐用仓库自带脚本一键增量补登**，也可手工逐个登录（兜底）。
 
 ### 方式一：登录脚本（推荐）
 
-`scripts/login-arkcli-accounts.ts` 读取 `opencode.jsonc` 的 `planStats.accounts`，**每次执行先清空所有账号的 HOME 目录**，再逐个走 `--no-browser` 跨设备流登录并验证。需要 [bun](https://bun.sh) 与 `bun install`（含 `jsonc-parser`）。
+`scripts/login-arkcli-accounts.ts` 读取 `opencode.jsonc` 的 `planStats.accounts`，**默认增量**：先逐账号 `auth status` 探测登录态，仅对过期/未登录/缺失的账号清空其 HOME 并重登（`--no-browser` 跨设备流），有效账号跳过；`--force` 可恢复旧全量清空重登。需要 [bun](https://bun.sh) 与 `bun install`（含 `jsonc-parser`）。
 
 POSIX（Linux / macOS）：
 
 ```bash
 cd opencode-plan-mate
-bun scripts/login-arkcli-accounts.ts                  # 默认读 ./opencode.jsonc
+bun scripts/login-arkcli-accounts.ts                        # 默认增量,读 ./opencode.jsonc
 bun scripts/login-arkcli-accounts.ts --config ~/.config/opencode/opencode.jsonc
-bun scripts/login-arkcli-accounts.ts --dry-run        # 只打印将登录的账号与 HOME,不实际登录
+bun scripts/login-arkcli-accounts.ts --dry-run              # 只打印每账号「跳过/重登」分类,不登录
+bun scripts/login-arkcli-accounts.ts --force                # 全量清空后重登全部账号
+bun scripts/login-arkcli-accounts.ts --only <name>          # 只处理指定账号
+bun scripts/login-arkcli-accounts.ts --browser normal       # 普通模式打开(默认隐身)
+bun scripts/login-arkcli-accounts.ts --code-input manual    # 强制手工粘贴(默认剪贴板捕获)
 ```
 
 Windows（PowerShell）——脚本不展开 `--config` 路径的 `~`，PowerShell 也会把 `~` 原样传给子进程，需用 `$env:USERPROFILE` 显式展开：
 
 ```powershell
 cd opencode-plan-mate
-bun scripts/login-arkcli-accounts.ts                        # 默认读 ./opencode.jsonc
+bun scripts/login-arkcli-accounts.ts                        # 默认增量,读 ./opencode.jsonc
 bun scripts/login-arkcli-accounts.ts --config "$env:USERPROFILE\.config\opencode\opencode.jsonc"
-bun scripts/login-arkcli-accounts.ts --dry-run              # 只打印将登录的账号与 HOME,不实际登录
+bun scripts/login-arkcli-accounts.ts --dry-run              # 只打印每账号「跳过/重登」分类,不登录
 ```
 
-交互流程（每账号）：脚本打开浏览器 → 你在浏览器完成火山 SSO 授权 → 页面显示 base64 授权码 → 复制回终端粘贴 → 脚本完成登录、profile 兜底与 `usage plan` 验证。单账号失败会标注原因并继续下一个，全部结束汇总成功/失败清单（有失败则非零退出）。
+交互流程（每账号，cross-device 默认）：脚本**以隐身窗口自动打开浏览器**（`--browser normal` 可切普通模式）→ 你在浏览器完成火山 SSO 授权 → 页面显示 base64 授权码 → **复制即可**（脚本自动从剪贴板捕获，按 Phase 1 的 `state` 校验防误捕）→ 脚本完成登录、profile 兜底与 `usage plan` 验证。剪贴板不可用/校验不中/超时回退手工粘贴；`--code-input manual` 强制手工。单账号失败会标注原因并继续下一个，全部结束汇总成功/失败清单（有失败则非零退出）。
 
-> 注意：脚本每次**全量清空重登**，不会保留已有登录态。想临时只登部分账号，用 `--dry-run` 确认清单后再手工执行对应账号。
+> 注意：默认**增量只补过期**，有效账号保留登录态跳过。想全量重登用 `--force`；只登某个账号用 `--only <name>`。`--flow local-callback` 可选本地回调流（arkcli 自开普通模式浏览器、授权后自动回调完成免复制），失败自动回退跨设备流。
 
-**自动清理**：脚本每次启动会**全量清空账号根目录**（`~/.arkcli-accounts/`，含所有账号登录态与历史嵌套残留），再逐账号重新登录，确保环境干净。`--dry-run` 会预览将清空的目录与登录清单但不会实际删除。若 `opencode.jsonc` 里账号路径本身写成了嵌套路径（配置错误），脚本会中止并提示，需修正配置而非依赖清理。浏览器授权子进程注入的是**可信真实用户 home**（污染回退后），浏览器/WinINet 缓存（如 `Content.IE5`）写入真实 profile，**不写入账号 HOME**——账号 HOME 只保留 arkcli 登录态，保证下次清空可正常删除。
+**自动清理**：增量模式仅清空判定为需重登的账号 HOME（含其内嵌套残留）；`--force` 才清空整个账号根目录（`~/.arkcli-accounts/`）。若 `opencode.jsonc` 里账号路径本身写成了嵌套路径（配置错误），脚本会中止并提示，需修正配置而非依赖清理。浏览器授权子进程注入的是**可信真实用户 home**（污染回退后），浏览器/WinINet 缓存（如 `Content.IE5`）写入真实 profile，**不写入账号 HOME**——账号 HOME 只保留 arkcli 登录态，保证下次清空可正常删除。
 
 ### 方式二：手工逐个登录（兜底）
 
@@ -134,10 +140,14 @@ account-b         —                 —                 —
 
 | 现象 | 原因 | 处理 |
 |------|------|------|
-| 行显示「SSO 已过期 / 未登录」 | 该账号在对应 HOME 的 SSO 登录态已过期（refresh_token 约 48h 绝对有效期）或未登录 | 运行 `bun scripts/login-arkcli-accounts.ts` 全量重登 |
+| 行显示「SSO 已过期 / 未登录」 | 该账号在对应 HOME 的 SSO 登录态已过期（refresh_token 约 48h 绝对有效期）或未登录 | 运行 `bun scripts/login-arkcli-accounts.ts`（默认增量，只补过期账号；`--only <name>` 定向补单个） |
 | 行显示「arkcli 不可用」 | 本机未安装 arkcli 或命令不可执行 | 安装 arkcli |
 | 行显示「未订阅/无套餐」 | 该账号未持有 Coding Plan | 确认账号是否订阅 |
 | 行显示「usage plan 未返回 coding-plan 桶」 | arkcli 输出与预期结构不符 | 人工核对：POSIX 用 `HOME=<该账号> arkcli usage plan --product coding-plan --format json`；Windows 用 `$env:USERPROFILE="<该账号>"; arkcli usage plan --product coding-plan --format json` |
 | 所有行都一样 | 多个账号配到了同一个 HOME / 未用独立 HOME | 检查 `planStats.accounts` 每个账号指向独立目录 |
-| 浏览器 SSO 报 `redirect_uri` 错误 | `volc-sso` 浏览器流本地端口回调偶发失败 | 改用 `--no-browser` 跨设备流登录 |
+| 浏览器 SSO 报 `redirect_uri` 错误 | `volc-sso` 浏览器流本地端口回调偶发失败 | 改用默认跨设备流（脚本默认即跨设备；`--flow local-callback` 失败会自动回退） |
 | 某账号百分比 100% | 该账号月度/周度配额已用完 | 换账号或等重置（重置时间见对应行） |
+
+> **为什么默认增量而不是全量重登？** SSO 约 48h 过期，全量重登意味着每 2 天把全部账号（即使还有效的）重登一遍。脚本默认先 `auth status` 探测，只补过期的，有效账号跳过。探测不可解析时按「需重登」处理（fail-safe：宁可多登一次，不跳过陈旧会话）。
+
+> **剪贴板自动捕获是怎么工作的？** 授权码是 `base64("code=..&state=<Phase1 state>")`。脚本轮询剪贴板，仅当解码后含当前 Phase 1 的 `state` 与 `code=` 才接受并自动完成登录，避免误捕复制到剪贴板的其它内容；捕获不到时回退手工粘贴。

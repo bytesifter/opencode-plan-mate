@@ -1,4 +1,4 @@
-# tidy-river
+# opencode-plan-mate
 
 本项目遵循团队规范体系（AndOps）：
 D:/code/andops/AGENTS.md

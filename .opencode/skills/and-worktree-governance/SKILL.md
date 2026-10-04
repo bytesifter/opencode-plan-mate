@@ -1,7 +1,7 @@
 ---
 name: and-worktree-governance
-version: 0.4.0
-description: "项目级 worktree 治理（单 skill，AI 自主执行，双信号模型）：以项目（projectID）为治理锚点，一次盘点关联 openspec change / worktree / 功能分支 / 会话（含 time_updated），先出项目总览（看清：做到哪/做完没/合并没/会话闲没闲）再快速处理——固化无条件（有可固化内容每次治理就固化，含游离态落分支）→ 代码终端态清理（已合并+干净+change 完成态，git 状态足够不等会话）→ 会话闲置回收（>15 天删会话，含 master 非当前会话与游离会话的纯会话回收——仅删会话、豁免先固化、当前会话 id 级保护；对话内容 git 不可见故以闲置时间为代理）；change 状态门控分支（in-progress 不清理）；合并 feature→master 属审核能力不在治理范围（只标注待合并）；git 拒绝即停，治理报告落盘；标准随 skill 内部权威文件（references/governance-standards.md）。当用户要求治理/看清项目 worktree 状态、收尾固化、回收残留与过期会话、快速对齐并行迭代时使用。反触发：worktree 创建（opencode 内置）、合并 feature→master 审核、普通 git 操作。"
+version: 0.5.0
+description: "项目级 worktree 治理（单 skill，AI 自主执行，双信号模型）：以项目（projectID）为治理锚点，一次盘点关联 openspec change / worktree / 功能分支 / 会话（含 time_updated），先出项目总览（看清：做到哪/做完没/合并没/会话闲没闲）再快速处理——固化无条件（有可固化内容每次治理就固化，含游离态落分支）→ 合并门禁自动执行（pending_merge 门禁过即 feature→master 合并，未过记未合并原因；检查在 feature worktree 侧执行）→ 代码终端态清理（已合并+干净+change 完成态，git 状态足够不等会话）→ 会话闲置回收（>15 天删会话，含 master 非当前会话与游离会话的纯会话回收——仅删会话、豁免先固化、当前会话 id 级保护；对话内容 git 不可见故以闲置时间为代理）；change 状态门控分支（in-progress 不清理）；git 拒绝即停，治理报告落盘；标准随 skill 内部权威文件（references/governance-standards.md）。当用户要求治理/看清项目 worktree 状态、收尾固化、自动合并已完备 change、回收残留与过期会话、快速对齐并行迭代时使用。反触发：worktree 创建（opencode 内置）、合并冲突解法（人工介入）、普通 git 操作。"
 metadata:
   requires:
     bins: [git, python, opencode, openspec]
@@ -24,7 +24,7 @@ metadata:
 - **项目锚点**：治理对象为当前项目（projectID）全部 worktree / change / 分支 / 会话，SHALL NOT 处理其他项目。
 - **master worktree 唯一执行入口**：仅当当前会话 checkout 在 master 分支时执行；非 master 会话 SHALL 拒绝并说明。
 - **执行上下文强制锁定**：[禁止] 使用无目录 git 命令；全部 git 命令 SHALL 显式 `git -C <目录>`。
-- **合并边界**：[禁止] 执行 feature→master 合并（审核能力，人守出口）；仅将「待合并」列为建议动作。
+- **合并边界**：feature→master 合并由**合并门禁通过后自动执行**（Step 5b-5c）；门禁未过 → SHALL NOT 合并，未合并原因记报告；合并冲突 SHALL 停下交人工。
 - **change 门控**：change in-progress 的关联**分支** SHALL NOT 清理（迭代在飞）。
 - **固化无条件**：有可固化内容 SHALL 每次治理即固化，不等会话过期。
 - **会话删除不可逆**：回收会话前 SHALL 保证其代码工作已入 git（先固化后回收）；纯会话回收（仅删会话记录、不删 worktree/分支，无代码载体）豁免该前提。
@@ -77,8 +77,8 @@ python <本skill目录>/../_shared/worktree_gate.py --inventory <gated.json> --s
 | change/对象       | 状态     | 合并?  | 沙箱    | 会话   | 处置   | 建议动作       |
 +------------------+----------+--------+---------+--------+--------+---------------+
 | <change>         | in-prog  | -      | <dir>   | 活跃   | 保留   | 迭代在飞       |
-| <change>         | complete | 未合并  | <dir>   | 闲置   | 回收   | 沙箱会话回收,分支待合并 |
-| <孤儿分支>        | -        | 未合并  | -       | -      | 保留   | 待合并(交审核) |
+| <change>         | complete | 未合并  | <dir>   | 闲置   | 回收   | 沙箱会话回收,分支走合并门禁 |
+| <孤儿分支>        | -        | 未合并  | -       | -      | 保留   | 孤儿无 change,交人工决策 |
 | <游离残留>        | 孤儿     | -      | <dir>   | 闲置   | 清理   | 回收           |
 | <游离有工作>      | 孤儿     | -      | <dir>   | 活跃   | 固化   | 落分支保工作    |
 | <当前会话>        | master   | -      | master  | 活跃   | 保留   | 执行入口保护    |
@@ -87,28 +87,9 @@ python <本skill目录>/../_shared/worktree_gate.py --inventory <gated.json> --s
 +------------------+----------+--------+---------+--------+--------+---------------+
 ```
 
-- 总览回答"做到哪 / 做完没 / 合并没 / 会话闲没闲"；`pending_merge` 对象列为「待合并（建议交审核）」，**不执行**。
+- 总览回答"做到哪 / 做完没 / 合并没 / 会话闲没闲"；`pending_merge` 对象列为「待合并门禁判定」——门禁过 → 自动合并，门禁不过 → 未合并（原因）。
 
-### Step 5a change 归档（openspec 归档流程）
-
-对 classify 输出 `archives` 中每个 `archive_ready == true` 的 change，执行 **openspec 归档流程**（change 生命周期闭环：complete → 归档 → spec 合并进主 spec）：
-
-```
-A0 前置检查：按 ./norms/AGENTS-openspec.md §二 归档钩子表逐项核验 5 项
-   (1 三类任务均已勾选完成 / 2 文档差异验证或豁免声明有效 /
-    3 config.yaml 目录结构一致 / 4 config.yaml 协议与技术栈一致 /
-    5 当前 worktree 处于 master 分支——门禁 G1 天然满足)
-A1 openspec archive <change> -y
-   (openspec 原生流程：change 移入 archive/ + spec delta 合并进主 spec；
-    openspec 自身的任务完成校验作第二道防线)
-A2 结果记录进治理报告「归档」小节
-```
-
-- 任一前置检查未过 → **停下**，报告未过项，进入「异常」，[禁止] 跳过检查强行归档。
-- `openspec archive` 报错 → **停下**，报告错误，进入「异常」，保留归档现场（change 已在 archive/ 或 spec 已合并），下次治理重新盘点可见。
-- 分支未合并的 complete change（`archive_ready == false` + pending_merge）→ 不归档，标注「待合并（建议交审核）」，归档等待分支合入 master 后由下次治理执行。
-
-### Step 5 固化逻辑（无条件）
+### Step 5a 固化逻辑（无条件）
 
 对每个 `disposal == solidify` 的对象，按固化链连续执行（全程 `git -C <目录>`）。固化 **SHALL 无条件执行**：有可固化内容即固化（每次治理都做），SHALL NOT 等待会话过期或 change 状态。**按 `master_commit` 标记分派**：`master_commit == true` 走 M 链（master 工作区提交，见下），其余走 B 链（游离态/feature）。
 
@@ -137,10 +118,59 @@ M3 git -C <master worktree> push origin master
    (推送失败 -> 停下报告，见停止纪律；[禁止] --force)
 ```
 
-- **合并边界**：B3 只同步主干进分支，[禁止] 合并 feature→master（审核能力）；M 链提交直接进 master 主干，是「master 工作区提交」需求的唯一例外，不改变 master worktree 目录自保护。
+- **合并边界**：B3 只同步主干进分支（master→feature，非收口）；feature→master 收口合并由 Step 5b-5c 门禁自动执行。
 - 固化只保工作入 git，不回收沙箱；沙箱是否回收由 Step 6 会话闲置判定决定。
 
-**时序**：Step 5a 归档（A 链，openspec 归档产物：change 移入 archive/ + spec 合并进主 spec）→ Step 5b 固化 B 链（游离/feature 落分支）→ Step 5c master 提交 M 链。归档产物（archive/ 移动 + spec 变更）进入 M 链 `git -C <master worktree> add -A` 范围，随 master 提交一并收口入库。
+### Step 5b 合并门禁（feature 侧检查）
+
+对 classify 输出中每个 `pending_merge` 对象（含 `archives` 中 `pending_merge == true` 的 complete change），执行合并门禁判定：
+
+```
+G0 门禁检查脚本：python <本skill目录>/../_shared/worktree_merge_check.py \
+     --dir <feature worktree> --change <change名>
+   (确定性判定：档位 1/2、G3 测试完整性「计划承诺->报告兑现」、reasons)
+G1 AI 层语义判定（脚本无法判定的项）：
+   - 文档差异豁免有效性（./norms/AGENTS-docs.md §三）
+   - 技术方案完整性（若档位 2 纳入 G2：change design.md / docs/technical/<topic>/ 存在）
+   - config 一致性（./norms/AGENTS-openspec.md §三 归档钩子表项 3/4）
+   (判定依据记录进报告，保持可审计)
+```
+
+- `allowed=true` → 进入 Step 5c 自动合并。
+- `allowed=false` → **停下该对象的合并**，未合并原因（脚本 `reasons` + AI 判定项）回填 `pending_merge.reasons`，记入报告「未合并（原因）」区，不执行合并。原因可修复项（补测试报告/补计划）由后续迭代处理，非永久卡死。
+
+### Step 5c 自动合并（feature→master）
+
+对合并门禁通过的 `pending_merge` 对象，在 master worktree 执行：
+
+```
+C1 git -C <master worktree> merge feature/<分支> --no-ff --no-edit
+   (冲突 -> 停下，见停止纪律；[禁止] 自动决定冲突解法)
+C2 git -C <master worktree> push origin master
+   (推送失败 -> 停下报告；[禁止] --force)
+```
+
+- 合并后该 change 的 `archive_ready` 自动满足（分支已合并 master），进入 Step 5d 归档。
+
+### Step 5d change 归档（openspec 归档流程）
+
+对 classify 输出 `archives` 中每个 `archive_ready == true` 的 change（含 Step 5c 合并后就绪的），执行 **openspec 归档流程**（change 生命周期闭环：complete → 归档 → spec 合并进主 spec）：
+
+```
+A1 openspec archive <change> -y
+   (openspec 原生流程：change 移入 archive/ + spec delta 合并进主 spec；
+    质量判据已在 Step 5b 合并门禁核验，openspec 工具原生 validate 作第二道防线)
+A2 结果记录进治理报告「归档」小节
+```
+
+- `openspec archive` 报错 → **停下**，报告错误，进入「异常」，保留归档现场（change 已在 archive/ 或 spec 已合并），下次治理重新盘点可见。
+- 分支未合并的 complete change（`archive_ready == false` + pending_merge）→ 走 Step 5b-5c 合并门禁；门禁未过 → 不归档，未合并原因记报告，归档等待分支合入 master 后由下次治理执行。
+
+### Step 5e master 提交（M 链收口）
+
+Step 5d 归档产物（archive/ 移动 + spec 变更）进入 M 链 `git -C <master worktree> add -A` 范围，随 master 提交一并收口入库（M 链见 Step 5a）。
+
+**时序**：Step 5a 固化（B 链 + M 链定义）→ Step 5b 合并门禁（feature 侧检查）→ Step 5c 自动合并（feature→master）→ Step 5d 归档（A 链，openspec 归档产物）→ Step 5e master 提交（M 链收口）。归档产物（archive/ 移动 + spec 变更）进入 M 链 `add -A` 范围随 master 提交入库。
 
 ### Step 6 清理与回收（代码终端态 + 会话闲置）
 
@@ -158,7 +188,7 @@ D3 opencode session delete <会话 id>                 (有则删)
 ```
 R1 git -C <master worktree> worktree remove <目录>
 R2 opencode session delete <会话 id>
-   (分支保留待合并/进行中, 不删)
+   (分支保留, 待合并门禁判定/进行中, 不删)
 ```
 
 4. 对每个 `disposal == recycle` 且 `object_type == "session"` 的**纯会话对象**（master 非当前会话 / 游离会话），执行**纯会话回收**（仅删会话，无 worktree/分支可删）：
@@ -203,8 +233,10 @@ S1 opencode session delete <会话 id>
 | 对象 | 原因 | 建议 |
 ### 异常
 | 停止点 | 原因 |
-### 待合并（建议交审核）
-| 分支 | 说明 |
+### 未合并（原因）
+| 分支 | change | 档位 | 未合并原因 |
+|------|--------|------|-----------|
+| <branch> | <change> | 1/2 | <原因多项: 测试计划/报告缺失 / 任务未勾完 / 文档豁免失效 / config 不一致> |
 ```
 
 ## 停止纪律（git 拒绝即停 · 无异常不停止）
@@ -213,7 +245,7 @@ S1 opencode session delete <会话 id>
 
 - **门禁不过**：非 master 会话 / 应用不符 → 停下报告 `gate.reason`。
 - **git 命令失败**：commit / merge / push / worktree remove / branch -d 任一报错 → 停下报告，不用 `-D` / `--force`。**master 提交链（M1 add / M2 commit / M3 push）任一失败同样停下报告进入「异常」，[禁止] `--force` 重推**。
-- **归档失败**：归档前置 5 项钩子检查任一未过 → 停下报告未过项；`openspec archive` 报错 → 停下报告错误，[禁止] 跳过检查强行归档。
+- **合并门禁未过 / 归档失败**：合并门禁未过 → 停下该对象合并，未合并原因记报告；`openspec archive` 报错 → 停下报告错误，[禁止] 跳过检查强行归档。
 - **合并冲突**：合并 master→feature 冲突 → 停下报告冲突文件清单（`git -C <目录> diff --name-only --diff-filter=U`），给出解决建议，经用户确认后按其方案解决并重新合并，SHALL NOT 自动决定冲突解法。
 - **卡死对象**：既有未固化工作又无法清理（冲突态 / 删脏被拒）→ 停下报告，指引人工介入。
 - **标准未覆盖**：skill 内部标准（references/governance-standards.md）缺失或引用失败 → 停下报告，不臆断标准执行删除。
@@ -227,11 +259,11 @@ S1 opencode session delete <会话 id>
 ## 反触发
 
 - worktree 创建（`git worktree add`）→ opencode 内置，不处理
-- 合并 feature→master（审核能力）→ 不在本 skill 范围（仅标注待合并）
+- 合并冲突解决（feature→master 冲突的解法）→ 人工介入，治理 SHALL NOT 自动决定冲突解法
 - 普通 git 操作（改文件、rebase 等）不涉及项目治理 → 不触发本 skill
 - 非当前项目（其他 projectID）的对象 → 不处理
 
 ## 与共享模块的协作边界
 
-- 盘点 / 门禁 / 处置判定全部经 `../_shared/` 模块执行（只读判定），本 skill 负责编排、项目总览与写操作执行
-- 契约文档：`../_shared/references/`（inventory / gate / classify-contract）
+- 盘点 / 门禁 / 处置判定 / 合并门禁判定全部经 `../_shared/` 模块执行（只读判定），本 skill 负责编排、项目总览与写操作执行
+- 契约文档：`../_shared/references/`（inventory / gate / classify-contract）与 `worktree_merge_check.py`（合并门禁 G3 判定）

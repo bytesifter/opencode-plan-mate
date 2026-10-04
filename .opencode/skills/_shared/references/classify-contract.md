@@ -17,7 +17,7 @@
 | `recycle` | 未合并干净分支 + 会话过期/无会话；**或纯会话对象**（master 非当前会话 / 游离会话）闲置超阈值 | 删 worktree+会话（保留分支）；**纯会话回收仅删会话**（豁免先固化后回收，见「纯会话对象」） |
 | `keep` | 执行入口自保护 / 当前会话（会话 id 级） / change in-progress 分支 / 未合并干净+会话活跃 / 非 feature 分支 / 游离纯残留+会话活跃 / 纯会话对象活跃 | 保留，报告原因 |
 | `stuck` | 合并冲突未解决（dirty + in_merge） | 卡死，不处置，需人工介入 |
-| `pending_merge` | 未合并干净分支（keep/recycle 的标注位） | 待合并（建议交审核），治理不执行 feature→master 合并 |
+| `pending_merge` | 未合并干净分支（keep/recycle 的标注位） | 待合并门禁判定；门禁通过后治理自动执行 feature→master 合并，未通过原因记入 `reasons` |
 
 判定依据：spec「双信号驱动模型」「change 状态门控处置」「固化逻辑（无条件）」「代码对象终端态清理」「会话闲置回收」「未合并对象处置」「合并边界」。
 
@@ -43,7 +43,7 @@
 - **change 归档判定**（第四类对象，`archives` 字段，供 skill Step 5a 归档执行）：
   - 仅 `inventory.changes` 中 `status=complete` 的 change 进入归档判定；in-progress 等非 complete 不标
   - 关联分支（`correlations.change_to_branch` 的 branch）已合并 master（复用 `feature_branches[].merged_to_master`，缺失回退 git `merged_into_master`）或无关联分支 → `archive_ready: true`（可归档）
-  - 关联分支未合并 master → `archive_ready: false` + `pending_merge: true`（待合并，建议交审核，归档等待分支合入）
+  - 关联分支未合并 master → `archive_ready: false` + `pending_merge: true`（待合并门禁判定，门禁通过后治理自动合并，归档等待分支合入）
   - 判定数据复用 inventory 已有字段，不新增数据源
 
 ## git 命令约束
@@ -67,7 +67,8 @@
       merged_to_master,           # None 未判定 / bool
       disposal: "solidify"|"cleanup"|"recycle"|"keep"|"stuck",
       reason: string,
-      pending_merge: bool,         # 待合并（建议交审核）
+      pending_merge: bool,         # 待合并（门禁判定）
+      reasons: [],                 # 未合并原因（默认空=待合并门禁判定回填；由 worktree_merge_check 判定结果填充）
       master_commit: bool          # master 工作区提交（solidify 且 is_master 时为 true，skill 走 M 链）
     }
   ],
@@ -78,7 +79,8 @@
       branch: "feature/<change>" | null,   # 关联分支（无则 null）
       merged_to_master: bool | null,       # 分支合并状态（无分支为 null）
       archive_ready: bool,         # true=可归档；false=分支未合并不归档
-      pending_merge: bool,         # 分支未合并标注（待合并，建议交审核）
+      pending_merge: bool,         # 分支未合并标注（待合并门禁判定）
+      reasons: [],                 # 未合并原因（默认空；由合并门禁判定结果填充）
       reason: string
     }
   ]
@@ -97,3 +99,4 @@
 - 2026-09-29：纯会话治理（`object_type="session"`、会话 id 级当前会话保护、纯会话回收豁免固化前提、master 对象不吸收会话）
 - 2026-09-29：master 工作区提交（is_master 分支脏判定 + 项目级 change 门控 + complete 锚点 → solidify/master_commit）
 - 2026-09-29：change 归档执行（archives 字段：complete + 分支已合并/无分支 → archive_ready；未合并 → pending_merge；in-progress 不标）
+- 2026-10-03：合并能力（pending_merge 标注新增 `reasons` 字段默认空，由合并门禁判定回填；归档等待分支合入口径更新）

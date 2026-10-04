@@ -1,17 +1,28 @@
 import { test, expect } from "bun:test"
 import {
-  buildSpawn,
+  base64Decode,
+  browserIdFromProgId,
+  buildClipboardCommand,
+  buildClipboardFallbackCommand,
+  buildIncognitoPlan,
   buildOpenPlan,
   buildOpenPlanEnv,
+  buildSpawn,
+  classifyAuthStatus,
+  describeProbe,
   expandHome,
   extractAccounts,
+  extractAuthCode,
+  extractStateFromUrl,
   hasNestedPollution,
   loginPhase1Args,
   loginPhase2Args,
+  needsLogin,
   parseAuthorizeUrl,
   parseArgs,
   renderProgress,
   resetAccountRoot,
+  resolveBrowserExe,
   trustedHomeDir,
   type LoginResult,
 } from "../scripts/login-arkcli-accounts"
@@ -169,14 +180,99 @@ test("parseAuthorizeUrl 从 stdout JSON 提取 authorize_url", () => {
 })
 
 // ===== parseArgs =====
-test("parseArgs 解析 --config / --dry-run / --help", () => {
-  expect(parseArgs(["--config", "custom.jsonc", "--dry-run"])).toEqual({
-    config: "custom.jsonc",
-    dryRun: true,
+test("parseArgs 解析 --config / --dry-run / --help 及默认值", () => {
+  const defaults = {
+    config: "opencode.jsonc",
+    dryRun: false,
+    force: false,
+    only: undefined,
+    browser: "incognito",
+    codeInput: "clipboard",
+    flow: "cross-device",
+  } as const
+  expect(parseArgs(["--config", "custom.jsonc", "--dry-run"])).toEqual({ ...defaults, config: "custom.jsonc", dryRun: true })
+  expect(parseArgs(["--config=abc.jsonc"])).toEqual({ ...defaults, config: "abc.jsonc" })
+  expect(parseArgs(["--help"])).toEqual({ ...defaults, dryRun: true })
+  expect(parseArgs([])).toEqual(defaults)
+})
+
+test("parseArgs 解析 --force / --only / --browser / --code-input / --flow", () => {
+  const defaults = {
+    config: "opencode.jsonc",
+    dryRun: false,
+    force: false,
+    only: undefined,
+    browser: "incognito",
+    codeInput: "clipboard",
+    flow: "cross-device",
+  } as const
+  expect(parseArgs(["--force"])).toEqual({ ...defaults, force: true })
+  expect(parseArgs(["--only", "vollc5427"])).toEqual({ ...defaults, only: "vollc5427" })
+  expect(parseArgs(["--only=vollc5427"])).toEqual({ ...defaults, only: "vollc5427" })
+  expect(parseArgs(["--browser", "normal"])).toEqual({ ...defaults, browser: "normal" })
+  expect(parseArgs(["--browser=normal"])).toEqual({ ...defaults, browser: "normal" })
+  expect(parseArgs(["--browser", "incognito"])).toEqual({ ...defaults, browser: "incognito" })
+  expect(parseArgs(["--code-input", "manual"])).toEqual({ ...defaults, codeInput: "manual" })
+  expect(parseArgs(["--code-input=manual"])).toEqual({ ...defaults, codeInput: "manual" })
+  expect(parseArgs(["--flow", "local-callback"])).toEqual({ ...defaults, flow: "local-callback" })
+  expect(parseArgs(["--flow=cross-device"])).toEqual({ ...defaults, flow: "cross-device" })
+})
+
+// ===== classifyAuthStatus:auth status 输出分类(D1) =====
+test("classifyAuthStatus 非零退出 + refresh 报错 → expired", () => {
+  const stderr = "ark: GetCodingPlanUsage requires Volcengine Ark SSO STS ... refresh_token is invalid."
+  expect(classifyAuthStatus(1, "", stderr)).toBe("expired")
+})
+
+test("classifyAuthStatus 非零退出无过期特征 → unknown(fail-safe)", () => {
+  expect(classifyAuthStatus(2, "", "boom: something else")).toBe("unknown")
+})
+
+test("classifyAuthStatus 退出 0 + logged_in:false → expired(fresh HOME)", () => {
+  const out = JSON.stringify({ auth_method: "none", logged_in: false })
+  expect(classifyAuthStatus(0, out, "")).toBe("expired")
+})
+
+test("classifyAuthStatus 退出 0 + volc_sso.expired → expired", () => {
+  const out = JSON.stringify({ logged_in: true, volc_sso: { expired: true } })
+  expect(classifyAuthStatus(0, out, "")).toBe("expired")
+})
+
+test("classifyAuthStatus 退出 0 + control_plane_auth.needs_login → expired", () => {
+  const out = JSON.stringify({
+    logged_in: true,
+    control_plane_auth: { status: "needs_login", reason: "refresh_failed" },
+    volc_sso: { expired: true },
   })
-  expect(parseArgs(["--config=abc.jsonc"])).toEqual({ config: "abc.jsonc", dryRun: false })
-  expect(parseArgs(["--help"])).toEqual({ config: "opencode.jsonc", dryRun: true })
-  expect(parseArgs([])).toEqual({ config: "opencode.jsonc", dryRun: false })
+  expect(classifyAuthStatus(0, out, "")).toBe("expired")
+})
+
+test("classifyAuthStatus 退出 0 + 无过期标记 → valid", () => {
+  const out = JSON.stringify({ logged_in: true, auth_method: "sso", volc_sso: { expired: false } })
+  expect(classifyAuthStatus(0, out, "")).toBe("valid")
+})
+
+test("classifyAuthStatus 退出 0 + 非 JSON → unknown(fail-safe)", () => {
+  expect(classifyAuthStatus(0, "not json at all", "")).toBe("unknown")
+})
+
+test("classifyAuthStatus 退出 0 + {ok:false} 错误 JSON → expired", () => {
+  const out = JSON.stringify({ ok: false, error: { message: "... refresh_token is invalid" } })
+  expect(classifyAuthStatus(0, out, "")).toBe("expired")
+})
+
+test("needsLogin 仅 valid 为 false", () => {
+  expect(needsLogin("valid")).toBe(false)
+  expect(needsLogin("missing")).toBe(true)
+  expect(needsLogin("expired")).toBe(true)
+  expect(needsLogin("unknown")).toBe(true)
+})
+
+test("describeProbe 给出可读原因", () => {
+  expect(describeProbe("missing", "")).toContain("缺失")
+  expect(describeProbe("expired", "")).toContain("过期")
+  expect(describeProbe("valid", "")).toContain("跳过")
+  expect(describeProbe("unknown", "xyz")).toContain("重登")
 })
 
 // ===== buildOpenPlan:Windows URL 不被 cmd 解析截断 =====
@@ -272,4 +368,112 @@ test("buildOpenPlanEnv 注入可信 home(darwin/linux)", () => {
   expect(l.file).toBe("xdg-open")
   expect(l.env.HOME).toBe("/home/u")
   expect(l.env.USERPROFILE).toBe("/home/u")
+})
+
+// ===== 剪贴板捕获:base64 + state 校验 =====
+test("buildClipboardCommand 按平台返回剪贴板读取命令", () => {
+  expect(buildClipboardCommand("win32").file.toLowerCase()).toContain("powershell")
+  expect(buildClipboardCommand("darwin")).toEqual({ file: "pbpaste", args: [] })
+  expect(buildClipboardCommand("linux")).toEqual({ file: "xclip", args: ["-o", "-selection", "clipboard"] })
+  expect(buildClipboardFallbackCommand().file).toBe("wl-paste")
+})
+
+test("base64Decode 标准/URL-safe/缺失 padding 容错", () => {
+  const raw = "code=abc&state=s1"
+  const std = Buffer.from(raw, "utf8").toString("base64")
+  expect(base64Decode(std)).toBe(raw)
+  const urlSafe = std.replace(/\+/g, "-").replace(/\//g, "_")
+  expect(base64Decode(urlSafe)).toBe(raw)
+  const noPad = std.replace(/=+$/, "")
+  expect(base64Decode(noPad)).toBe(raw)
+})
+
+test("extractAuthCode 命中:base64 解码 + state 匹配返回原码", () => {
+  const state = "07af3e7b423ff4b9f0f64bc6fba3552b"
+  const code = Buffer.from(`code=6eb05bd1cc05a5cb44a264f7be6cfcca&state=${state}`, "utf8").toString("base64")
+  expect(extractAuthCode(code, state)).toBe(code)
+})
+
+test("extractAuthCode state 不匹配 → undefined(防误捕)", () => {
+  const code = Buffer.from("code=abc&state=other", "utf8").toString("base64")
+  expect(extractAuthCode(code, "my-state")).toBeUndefined()
+})
+
+test("extractAuthCode 非授权码内容/空 → undefined", () => {
+  expect(extractAuthCode("随便复制的内容", "s")).toBeUndefined()
+  expect(extractAuthCode("", "s")).toBeUndefined()
+  const junk = Buffer.from("hello world no code here", "utf8").toString("base64")
+  expect(extractAuthCode(junk, "s")).toBeUndefined()
+})
+
+test("extractStateFromUrl 提取 state", () => {
+  const url = "https://signin.volcengine.com/authorize?client_id=x&state=07af3e7b423ff4b9f0f64bc6fba3552b"
+  expect(extractStateFromUrl(url)).toBe("07af3e7b423ff4b9f0f64bc6fba3552b")
+  expect(extractStateFromUrl("https://x.com/no-state")).toBeUndefined()
+})
+
+// ===== 隐身浏览器:探测 + flag + 回退 =====
+test("browserIdFromProgId 映射", () => {
+  expect(browserIdFromProgId("ChromeHTML")).toBe("chrome")
+  expect(browserIdFromProgId("MSEdgeHTM")).toBe("edge")
+  expect(browserIdFromProgId("FirefoxURL-308046B0AF4A39CB")).toBe("firefox")
+  expect(browserIdFromProgId("OperaStable")).toBe("unknown")
+})
+
+test("buildIncognitoPlan linux 各浏览器 flag", () => {
+  const url = "https://signin.volcengine.com/a?b=1"
+  expect(buildIncognitoPlan("linux", "chrome", url)).toEqual({ file: "google-chrome", args: ["--incognito", url] })
+  expect(buildIncognitoPlan("linux", "edge", url)).toEqual({ file: "microsoft-edge", args: ["--inprivate", url] })
+  expect(buildIncognitoPlan("linux", "firefox", url)).toEqual({ file: "firefox", args: ["-private-window", url] })
+})
+
+test("buildIncognitoPlan mac 走 open -na + flag", () => {
+  const url = "https://x.com/a"
+  expect(buildIncognitoPlan("darwin", "chrome", url)).toEqual({
+    file: "open",
+    args: ["-na", "Google Chrome", "--args", "--incognito", url],
+  })
+  expect(buildIncognitoPlan("darwin", "edge", url)).toEqual({
+    file: "open",
+    args: ["-na", "Microsoft Edge", "--args", "--inprivate", url],
+  })
+  expect(buildIncognitoPlan("darwin", "firefox", url)).toEqual({
+    file: "open",
+    args: ["-na", "Firefox", "--args", "-private-window", url],
+  })
+})
+
+test("buildIncognitoPlan unknown 浏览器回退普通模式", () => {
+  const url = "https://x.com/a"
+  expect(buildIncognitoPlan("linux", "unknown", url)).toEqual({ file: "xdg-open", args: [url] })
+  expect(buildIncognitoPlan("win32", "unknown", url)).toEqual({
+    file: "rundll32.exe",
+    args: ["url.dll,FileProtocolHandler", url],
+  })
+})
+
+test("buildIncognitoPlan win32 无 exe 回退普通;有 exe 用全路径 + flag", () => {
+  const url = "https://x.com/a"
+  expect(buildIncognitoPlan("win32", "chrome", url)).toEqual({ file: "rundll32.exe", args: ["url.dll,FileProtocolHandler", url] })
+  const exe = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+  expect(buildIncognitoPlan("win32", "chrome", url, { exe })).toEqual({ file: exe, args: ["--incognito", url] })
+})
+
+test("resolveBrowserExe 非 win32 裸命令名;win32 找不到/unknown → undefined", () => {
+  expect(resolveBrowserExe("linux", "chrome", {})).toBe("google-chrome")
+  expect(resolveBrowserExe("darwin", "firefox", {})).toBe("firefox")
+  expect(resolveBrowserExe("win32", "chrome", {})).toBeUndefined()
+  expect(resolveBrowserExe("win32", "unknown", {})).toBeUndefined()
+})
+
+test("resolveBrowserExe win32 命中候选路径(ProgramFiles)", () => {
+  const root = makeHomeRoot()
+  const chromePath = join(root, "Program Files", "Google", "Chrome", "Application", "chrome.exe")
+  mkdirSync(join(root, "Program Files", "Google", "Chrome", "Application"), { recursive: true })
+  writeFileSync(chromePath, "")
+  try {
+    expect(resolveBrowserExe("win32", "chrome", { ProgramFiles: join(root, "Program Files") })).toBe(chromePath)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })

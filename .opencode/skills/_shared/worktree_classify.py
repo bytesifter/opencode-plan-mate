@@ -14,7 +14,7 @@
   - recycle:  未合并分支 + 会话过期/无会话 -> 回收沙箱+会话，保留分支（待合并/进行中）
   - keep:     执行入口自保护 / in-progress 分支 / 未合并干净+会话活跃 / 非 feature 分支
   - stuck:    合并冲突未解决（dirty + in_merge）
-  - pending_merge: 未合并干净分支的标注（待合并，交审核，治理不执行 feature→master 合并）
+  - pending_merge: 未合并干净分支的标注（待合并门禁判定，门禁通过后治理自动执行 feature→master 合并）
 
 判定依据与 spec「双信号驱动模型」「change 状态门控处置」「固化逻辑（无条件）」
 「代码对象终端态清理」「会话闲置回收」「未合并对象处置」「合并边界」及治理规范一致。
@@ -143,6 +143,7 @@ def decide(inventory, idle_days=15):
             "disposal": "keep",
             "reason": "",
             "pending_merge": False,
+            "reasons": [],
             "master_commit": False,
         }
         return obj
@@ -249,7 +250,7 @@ def decide(inventory, idle_days=15):
             obj["disposal"] = "cleanup"
             obj["reason"] = "代码终端态：已合并 master（无沙箱，仅删分支）"
         else:
-            obj["reason"] = "未合并 master，待合并（建议交审核）"
+            obj["reason"] = "未合并 master，待合并门禁判定"
             obj["pending_merge"] = True
         objects.append(obj)
 
@@ -290,6 +291,7 @@ def decide(inventory, idle_days=15):
                 "disposal": "keep",
                 "reason": "执行入口会话，保留（会话 id 级保护）",
                 "pending_merge": False,
+                "reasons": [],
             })
             continue
 
@@ -324,6 +326,7 @@ def decide(inventory, idle_days=15):
             "disposal": "keep",
             "reason": "",
             "pending_merge": False,
+            "reasons": [],
         }
         if active:
             obj["reason"] = f"{label}，会话活跃，保留"
@@ -354,12 +357,13 @@ def decide(inventory, idle_days=15):
             "merged_to_master": merged,
             "archive_ready": True,
             "pending_merge": False,
+            "reasons": [],
             "reason": "",
         }
         if branch and merged is False:
             entry["archive_ready"] = False
             entry["pending_merge"] = True
-            entry["reason"] = "complete 但分支未合并 master，待合并（建议交审核），归档等待分支合入"
+            entry["reason"] = "complete 但分支未合并 master，走合并门禁判定，归档等待分支合入"
         elif branch:
             entry["reason"] = "complete 且分支已合并 master，可归档"
         else:
