@@ -46,6 +46,7 @@ Windows 下路径用盘符写法（`file:///` 后接 `D:/...`，斜杠而非反�
 | `statsDir` | `string` | 否 | 见下 | 统计目录（按日 JSONL 文件） |
 | `logDir` | `string` | 否 | 见下 | 日志目录（按日轮转，默认启用） |
 | `logPath` | `string` | 否 | - | 日志文件路径（强制单文件模式，禁用轮转） |
+| `fetchPatch` | `boolean` | 否 | `true` | 全局 fetch 兜底层开关：覆盖绕过 session 钩子的请求（会话恢复/drain 路径），纳入 key 轮询与熔断；`false` 时回到纯 session 钩子行为 |
 | `planStats` | `object` | 否 | - | 套餐配额统计配置：`accounts`（显示名 → 独立 arkcli HOME 目录），见 [套餐配额统计](../user-guide/plan-stats.md) |
 
 `logDir` / `statsDir` 可指向**已存在**的目录：插件以幂等方式准备目录，既存目录不会导致加载失败（Windows 下尤其重要，见下方说明）。

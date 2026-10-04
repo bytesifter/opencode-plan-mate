@@ -1,4 +1,4 @@
-import { appendFileSync } from "node:fs"
+import { appendFileSync, readFileSync, existsSync } from "node:fs"
 import { dirname, join } from "node:path"
 import type { LogLevel, EventContext } from "./types"
 import { ensureDir } from "./fs-util"
@@ -96,6 +96,25 @@ export class Logger {
     }
     const line = `${nowStr()} INFO  usage ${parts.join(" ")}\n`
     this.write(line)
+  }
+
+  /** 读取今天的日志行(rotation 模式读当天文件,simple 模式读固定文件)。文件不存在返回空数组。 */
+  readTodayLines(): string[] {
+    const p = this.todayLogPath()
+    if (!p) return []
+    try {
+      return readFileSync(p, "utf8").split("\n")
+    } catch {
+      return []
+    }
+  }
+
+  /** 当前日志文件路径(rotation 模式为当天文件,simple 模式为固定文件) */
+  todayLogPath(): string | null {
+    if (this.mode === "rotation") {
+      return join(this.dir, `plan-mate-${todayLocal()}.log`)
+    }
+    return this.fixedPath
   }
 
   private write(line: string): void {

@@ -1,6 +1,12 @@
 import type { ProviderPool } from "./pool"
 import type { ProviderEntry } from "./types"
 
+/**
+ * 兜底标记头:session 钩子已处理的请求带此头,兜底层据此放行不重复轮询。
+ * 仅进程内有效,不依赖外部语义;对外部服务可见但无副作用。
+ */
+export const POOLED_MARKER_HEADER = "x-opencode-plan-mate-pooled"
+
 /** 429 冷却类型 */
 export type CooldownType = "rate-limit" | "quota-exhausted"
 
@@ -86,8 +92,11 @@ export async function handleHttpRequest(
   if (!entry) return
   const headers = new Headers(event.request.headers)
   headers.set("Authorization", `Bearer ${entry.key}`)
+  // 兜底标记:提示全局 fetch 兜底层本请求已被钩子处理,勿重复轮询
+  headers.set(POOLED_MARKER_HEADER, "1")
   event.request = new Request(event.request, { headers })
   setStartTime(`${event.sessionID}:${event.kind}`, Date.now())
+  pool.acquire(entry.key)
   callbacks?.onCorrelate?.(event.sessionID, entry.account)
 }
 
@@ -118,6 +127,10 @@ export async function handleHttpResponse(
   startTimes.delete(startKey)
   const key = bearerKey(event.request.headers.get("Authorization"))
   if (!key) return
+  // 仅释放钩子已处理的在途计数(带兜底标记 = handleHttpRequest 曾 acquire;passthrough/池外请求不释放)
+  if (event.request.headers.get(POOLED_MARKER_HEADER)) {
+    pool.release(key)
+  }
   const entry = pool.entryByKey(key)
   const status = event.response.status
   let cooldownType: CooldownType | undefined

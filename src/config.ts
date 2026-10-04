@@ -46,6 +46,7 @@ export function parseOptions(options: Record<string, unknown> | undefined): Pars
     statsDir: typeof options.statsDir === "string" ? options.statsDir : undefined,
     logPath: typeof options.logPath === "string" ? options.logPath : undefined,
     logDir: typeof options.logDir === "string" ? options.logDir : undefined,
+    fetchPatch: typeof options.fetchPatch === "boolean" ? options.fetchPatch : true,
     planStats: parsePlanStats(options.planStats),
   }
 }

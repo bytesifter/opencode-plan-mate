@@ -14,6 +14,8 @@ export interface ParsedOptions {
   logPath?: string
   /** 日志目录路径(可选,启用按日轮转) */
   logDir?: string
+  /** 全局 fetch 兜底层开关(可选,默认 true;false 时回到纯 session 钩子行为) */
+  fetchPatch?: boolean
   /** plan_stats 配置(可选):参与官方套餐配额统计的账号映射(显示名 → 独立 arkcli HOME 目录) */
   planStats?: { accounts: Record<string, string> }
 }

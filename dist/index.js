@@ -9209,6 +9209,7 @@ function parseOptions(options) {
     statsDir: typeof options.statsDir === "string" ? options.statsDir : undefined,
     logPath: typeof options.logPath === "string" ? options.logPath : undefined,
     logDir: typeof options.logDir === "string" ? options.logDir : undefined,
+    fetchPatch: typeof options.fetchPatch === "boolean" ? options.fetchPatch : true,
     planStats: parsePlanStats(options.planStats)
   };
 }
@@ -9293,6 +9294,8 @@ function collectProviders(config, providers) {
 }
 
 // src/pool.ts
+var INFLIGHT_MAX_AGE_MS = 10 * 60 * 1000;
+
 class ProviderPool {
   entries;
   byBaseURL = new Map;
@@ -9300,6 +9303,8 @@ class ProviderPool {
   byKeyEntry = new Map;
   byKeyAccount = new Map;
   modelVariance = new Map;
+  inflight = new Map;
+  inflightSince = new Map;
   cooldownMs;
   quotaCooldownMs;
   cooldowns = new Map;
@@ -9328,6 +9333,7 @@ class ProviderPool {
   }
   next(model, originBaseURL) {
     const now = Date.now();
+    this.pruneInflight(now);
     const basePool = originBaseURL ? this.byBaseURL.get(originBaseURL) : this.entries;
     if (!basePool || basePool.length === 0)
       return null;
@@ -9340,8 +9346,15 @@ class ProviderPool {
     const available = pool.filter((e) => !this.isCoolingDown(e.key, now));
     if (available.length === 0)
       return null;
-    const idx = Math.floor(Math.random() * available.length);
-    return available[idx];
+    let min = Infinity;
+    for (const e of available) {
+      const n = this.inflight.get(e.key) ?? 0;
+      if (n < min)
+        min = n;
+    }
+    const least = available.filter((e) => (this.inflight.get(e.key) ?? 0) === min);
+    const idx = Math.floor(Math.random() * least.length);
+    return least[idx];
   }
   markCooldown(key, ms) {
     this.cooldowns.set(key, { until: Date.now() + (ms ?? this.cooldownMs) });
@@ -9355,6 +9368,30 @@ class ProviderPool {
       return false;
     }
     return true;
+  }
+  acquire(key) {
+    this.inflight.set(key, (this.inflight.get(key) ?? 0) + 1);
+    this.inflightSince.set(key, Date.now());
+  }
+  release(key) {
+    const n = this.inflight.get(key) ?? 0;
+    if (n <= 1) {
+      this.inflight.delete(key);
+      this.inflightSince.delete(key);
+    } else {
+      this.inflight.set(key, n - 1);
+    }
+  }
+  inflightCount(key) {
+    return this.inflight.get(key) ?? 0;
+  }
+  pruneInflight(now = Date.now()) {
+    for (const [key, ts] of this.inflightSince) {
+      if (now - ts > INFLIGHT_MAX_AGE_MS) {
+        this.inflight.delete(key);
+        this.inflightSince.delete(key);
+      }
+    }
   }
   keyIndex(key) {
     return this.byKeyIndex.get(key) ?? -1;
@@ -9381,6 +9418,7 @@ function modelFingerprint(models) {
 }
 
 // src/http-hooks.ts
+var POOLED_MARKER_HEADER = "x-opencode-plan-mate-pooled";
 var HTTP_TOO_MANY_REQUESTS = 429;
 var HTTP_PAYMENT_REQUIRED = 402;
 var startTimes = new Map;
@@ -9410,8 +9448,10 @@ async function handleHttpRequest(event, pool, callbacks) {
     return;
   const headers = new Headers(event.request.headers);
   headers.set("Authorization", `Bearer ${entry.key}`);
+  headers.set(POOLED_MARKER_HEADER, "1");
   event.request = new Request(event.request, { headers });
   setStartTime(`${event.sessionID}:${event.kind}`, Date.now());
+  pool.acquire(entry.key);
   callbacks?.onCorrelate?.(event.sessionID, entry.account);
 }
 async function handleHttpResponse(event, pool, callbacks) {
@@ -9421,6 +9461,9 @@ async function handleHttpResponse(event, pool, callbacks) {
   const key = bearerKey(event.request.headers.get("Authorization"));
   if (!key)
     return;
+  if (event.request.headers.get(POOLED_MARKER_HEADER)) {
+    pool.release(key);
+  }
   const entry = pool.entryByKey(key);
   const status = event.response.status;
   let cooldownType;
@@ -9470,6 +9513,160 @@ async function classify429(response) {
     }
   } catch {}
   return "rate-limit";
+}
+
+// src/fetch-patch.ts
+var HTTP_TOO_MANY_REQUESTS2 = 429;
+var HTTP_PAYMENT_REQUIRED2 = 402;
+function mergeHeaders(input, init) {
+  const merged = new Headers;
+  if (input instanceof Request) {
+    for (const [k, v] of input.headers.entries())
+      merged.set(k, v);
+  }
+  if (init?.headers) {
+    const hs = new Headers(init.headers);
+    for (const [k, v] of hs.entries())
+      merged.set(k, v);
+  }
+  return merged;
+}
+function rebuildWithHeaders(input, init, headers) {
+  const newHeaders = headers;
+  if (input instanceof Request) {
+    return [new Request(input, { headers: newHeaders }), init];
+  }
+  return [input, { ...init, headers: newHeaders }];
+}
+function installFetchPatch(pool, callbacks) {
+  const origFetch = globalThis.fetch;
+  const patched = async (input, init) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    const originalBaseURL = pool.findBaseURL(url);
+    if (!originalBaseURL)
+      return origFetch(input, init);
+    const headers = mergeHeaders(input, init);
+    if (headers.has(POOLED_MARKER_HEADER)) {
+      return origFetch(input, init);
+    }
+    const entry = pool.next(undefined, originalBaseURL);
+    if (!entry)
+      return origFetch(input, init);
+    headers.set("Authorization", `Bearer ${entry.key}`);
+    pool.acquire(entry.key);
+    const start = Date.now();
+    const sessionID = headers.get("x-opencode-session-id");
+    if (sessionID)
+      callbacks?.onCorrelate?.(sessionID, entry.account);
+    const [newInput, newInit] = rebuildWithHeaders(input, init, headers);
+    try {
+      const response = await origFetch(newInput, newInit);
+      const durationMs = Date.now() - start;
+      let cooldownType;
+      if (response.status === HTTP_TOO_MANY_REQUESTS2) {
+        cooldownType = await classify429(response);
+        const ms = cooldownType === "quota-exhausted" ? pool.quotaCooldownMs : pool.cooldownMs;
+        pool.markCooldown(entry.key, ms);
+      } else if (response.status === HTTP_PAYMENT_REQUIRED2) {
+        cooldownType = "quota-exhausted";
+        pool.markCooldown(entry.key, pool.quotaCooldownMs);
+      }
+      callbacks?.onResponse?.(pool, entry, response.status, durationMs, cooldownType);
+      return response;
+    } finally {
+      pool.release(entry.key);
+    }
+  };
+  globalThis.fetch = patched;
+  return () => {
+    globalThis.fetch = origFetch;
+  };
+}
+
+// src/tpm.ts
+var DEFAULT_WINDOW_MS = 60000;
+var TS_RE = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})\.\d{3}/;
+var USAGE_RE = /INFO\s+usage\s+in=(\d+)\s+out=(\d+)\s+reasoning=(\d+)\s+cacheR=(\d+)\s+cacheW=(\d+)\s+cost=([\d.]+)(?:\s+session=(\S+))?\s+provider=(\S+)/;
+function parseUsageLine(line) {
+  const ts = TS_RE.exec(line);
+  if (!ts)
+    return;
+  const fields = USAGE_RE.exec(line);
+  if (!fields)
+    return;
+  const t = Date.parse(`${ts[1]}T${ts[2]}.000+08:00`);
+  if (Number.isNaN(t))
+    return;
+  const num = (v) => {
+    const n = Number(v);
+    return Number.isFinite(n) && n >= 0 ? n : 0;
+  };
+  return {
+    t,
+    provider: fields[8],
+    tokens: num(fields[1]) + num(fields[2]) + num(fields[3]) + num(fields[4]) + num(fields[5])
+  };
+}
+function parseUsageLines(lines) {
+  const out = [];
+  for (const line of lines) {
+    if (!line.trim())
+      continue;
+    const s = parseUsageLine(line);
+    if (s)
+      out.push(s);
+  }
+  return out;
+}
+function computeWindowSums(samples, windowMs = DEFAULT_WINDOW_MS) {
+  const byProvider = new Map;
+  for (const s of samples) {
+    const arr = byProvider.get(s.provider);
+    if (arr)
+      arr.push(s);
+    else
+      byProvider.set(s.provider, [s]);
+  }
+  const out = new Map;
+  for (const [provider, list] of byProvider) {
+    const sorted = [...list].sort((a, b) => a.t - b.t);
+    const sums = [];
+    let lo = 0;
+    let acc = 0;
+    for (let i = 0;i < sorted.length; i++) {
+      const cur = sorted[i];
+      acc += cur.tokens;
+      while (lo < i && sorted[lo].t < cur.t - windowMs) {
+        acc -= sorted[lo].tokens;
+        lo++;
+      }
+      sums.push(acc);
+    }
+    out.set(provider, sums);
+  }
+  return out;
+}
+function percentile(sorted, q) {
+  if (sorted.length === 0)
+    return 0;
+  const idx = Math.min(sorted.length - 1, Math.floor(sorted.length * q));
+  return sorted[idx];
+}
+function renderWindowTable(dist, windowSec = DEFAULT_WINDOW_MS / 1000) {
+  if (dist.size === 0)
+    return "暂无 TPM 窗口数据";
+  const lines = [];
+  lines.push(`plan-mate 每账号 ${windowSec}s 窗口 token 分布`);
+  lines.push(`${"provider".padEnd(16)}  ${"p50".padStart(10)}  ${"p90".padStart(10)}  ${"max".padStart(10)}  n`);
+  for (const [provider, sums] of [...dist.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+    const sorted = [...sums].sort((a, b) => a - b);
+    lines.push(`${provider.padEnd(16)}  ${fmt(sorted.length ? percentile(sorted, 0.5) : 0)}  ${fmt(sorted.length ? percentile(sorted, 0.9) : 0)}  ${fmt(sorted.length ? sorted[sorted.length - 1] : 0)}  ${sorted.length}`);
+  }
+  return lines.join(`
+`);
+}
+function fmt(n) {
+  return n.toLocaleString("en-US").padStart(10);
 }
 
 // src/stats.ts
@@ -9984,7 +10181,7 @@ function errMsg(e) {
 }
 
 // src/logger.ts
-import { appendFileSync as appendFileSync2 } from "node:fs";
+import { appendFileSync as appendFileSync2, readFileSync as readFileSync3 } from "node:fs";
 import { dirname, join as join3 } from "node:path";
 class Logger2 {
   mode;
@@ -10033,6 +10230,23 @@ class Logger2 {
 `;
     this.write(line);
   }
+  readTodayLines() {
+    const p = this.todayLogPath();
+    if (!p)
+      return [];
+    try {
+      return readFileSync3(p, "utf8").split(`
+`);
+    } catch {
+      return [];
+    }
+  }
+  todayLogPath() {
+    if (this.mode === "rotation") {
+      return join3(this.dir, `plan-mate-${todayLocal()}.log`);
+    }
+    return this.fixedPath;
+  }
   write(line) {
     if (this.mode === "rotation") {
       const day = todayLocal();
@@ -10065,6 +10279,7 @@ var globalStatsDir = null;
 var globalLogger = null;
 var globalPool = null;
 var hooksRegistered = false;
+var uninstallFetchPatch = null;
 var pluginStartTime = 0;
 var pluginDirectory = "";
 var corrMap = new Map;
@@ -10107,17 +10322,29 @@ var src_default = define({
       await ctx.session.hook("http.request", (event) => handleHttpRequest(event, globalPool, callbacks));
       await ctx.session.hook("http.response", (event) => handleHttpResponse(event, globalPool, callbacks));
       hooksRegistered = true;
+      if (opts.fetchPatch !== false) {
+        uninstallFetchPatch = installFetchPatch(globalPool, {
+          onCorrelate: callbacks.onCorrelate,
+          onResponse: callbacks.onResponse
+        });
+      }
     }
     await ctx.tool.transform((editor) => {
       editor.add({
         name: "plan_mate_stats",
-        description: "查看 opencode-plan-mate 按天统计(请求数与 token 消耗)",
+        description: "查看 opencode-plan-mate 按天统计(请求数与 token 消耗),并按账号输出 60s 窗口 token 分布(p50/p90/max)作为 TPM 限流观测",
         input: { type: "object", properties: { days: { type: "number" } }, additionalProperties: false },
         execute: async (args) => {
           const days = typeof args?.days === "number" ? args.days : DEFAULT_CHART_DAYS;
           globalStats.flush();
           const store = aggregateStats(globalStatsDir, days);
-          return { content: renderChart(store, days) };
+          const chart = renderChart(store, days);
+          const todayLines = globalLogger.readTodayLines();
+          const samples = parseUsageLines(todayLines);
+          const dist = computeWindowSums(samples);
+          return { content: `${chart}
+
+${renderWindowTable(dist)}` };
         }
       });
       editor.add({
@@ -10152,6 +10379,8 @@ var src_default = define({
     })();
     return () => {
       controller.abort();
+      uninstallFetchPatch?.();
+      uninstallFetchPatch = null;
       globalStats?.stop();
     };
   }

@@ -6,11 +6,14 @@ interface CooldownEntry {
   until: number
 }
 
+/** 在途超时(毫秒):超过视为请求异常中断,清理计数(与 http-hooks 的 START_TIME_MAX_AGE_MS 对齐) */
+const INFLIGHT_MAX_AGE_MS = 10 * 60 * 1000
+
 /**
- * provider 池:负责随机选 provider 与 cooldown 管理。
+ * provider 池:负责随机选 provider、cooldown 与在途计数管理。
  *
- * - 随机选择无状态,不维护轮询位置
- * - 同接入点(baseURL)内轮询:请求从哪个接入点发出,就在该接入点下按模型过滤后随机选
+ * - 选择带在途感知(least-loaded):优先选在途数最小的非熔断 provider,同在途数时随机
+ * - 同接入点(baseURL)内轮询:请求从哪个接入点发出,就在该接入点下按模型过滤后选
  * - cooldown 仅标记不重试,失败交 opencode 原生
  * - 全部 provider 冷却时返回 null(passthrough)
  */
@@ -25,6 +28,10 @@ export class ProviderPool {
   private readonly byKeyAccount = new Map<string, string>()
   /** baseURL → 该接入点内条目模型集是否有差异(构造时计算,extractModel 守卫用) */
   private readonly modelVariance = new Map<string, boolean>()
+  /** key → 在途请求数(least-loaded 选池依据) */
+  private readonly inflight = new Map<string, number>()
+  /** key → 最近一次 acquire 时间戳(超时清理依据) */
+  private readonly inflightSince = new Map<string, number>()
   readonly cooldownMs: number
   readonly quotaCooldownMs: number
   private readonly cooldowns = new Map<string, CooldownEntry>()
@@ -56,7 +63,11 @@ export class ProviderPool {
   }
 
   /**
-   * 随机选一个非熔断 provider。
+   * 在 least-loaded 感知下选一个非熔断 provider。
+   *
+   * 分组规则与 V1 一致(接入点 + 模型),选择规则改为:在非熔断候选中,
+   * 选在途请求数最小的 provider;在途数相同的多个候选之间随机。
+   * 所有候选在途数均为 0 时退化为纯随机(与历史行为一致)。
    *
    * @param model - 请求 body 中的模型名,有匹配时在同接入点内按模型过滤
    * @param originBaseURL - 原始请求的 baseURL(接入点),同接入点内轮询
@@ -64,6 +75,7 @@ export class ProviderPool {
    */
   next(model?: string, originBaseURL?: string): ProviderEntry | null {
     const now = Date.now()
+    this.pruneInflight(now)
     const basePool = originBaseURL ? this.byBaseURL.get(originBaseURL) : this.entries
     if (!basePool || basePool.length === 0) return null
     let pool = basePool
@@ -73,8 +85,14 @@ export class ProviderPool {
     }
     const available = pool.filter((e) => !this.isCoolingDown(e.key, now))
     if (available.length === 0) return null
-    const idx = Math.floor(Math.random() * available.length)
-    return available[idx]
+    let min = Infinity
+    for (const e of available) {
+      const n = this.inflight.get(e.key) ?? 0
+      if (n < min) min = n
+    }
+    const least = available.filter((e) => (this.inflight.get(e.key) ?? 0) === min)
+    const idx = Math.floor(Math.random() * least.length)
+    return least[idx]
   }
 
   /**
@@ -98,6 +116,41 @@ export class ProviderPool {
       return false
     }
     return true
+  }
+
+  /** 请求发出时调用:某 key 在途计数 +1(least-loaded 用) */
+  acquire(key: string): void {
+    this.inflight.set(key, (this.inflight.get(key) ?? 0) + 1)
+    this.inflightSince.set(key, Date.now())
+  }
+
+  /** 响应/错误返回时调用:某 key 在途计数 -1(下限 0) */
+  release(key: string): void {
+    const n = this.inflight.get(key) ?? 0
+    if (n <= 1) {
+      this.inflight.delete(key)
+      this.inflightSince.delete(key)
+    } else {
+      this.inflight.set(key, n - 1)
+    }
+  }
+
+  /** 当前某 key 的在途请求数(未占用为 0) */
+  inflightCount(key: string): number {
+    return this.inflight.get(key) ?? 0
+  }
+
+  /**
+   * 清理超过存活阈值的在途计数(请求异常中断、abort 未配对响应时兜底)。
+   * 惰性调用(每次 next 时),与 startTimes 的 prune 模式一致。
+   */
+  pruneInflight(now: number = Date.now()): void {
+    for (const [key, ts] of this.inflightSince) {
+      if (now - ts > INFLIGHT_MAX_AGE_MS) {
+        this.inflight.delete(key)
+        this.inflightSince.delete(key)
+      }
+    }
   }
 
   /**

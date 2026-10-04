@@ -51,6 +51,15 @@ test("parseOptions: logDir 可选,与 logPath 独立", () => {
   expect(r3.logPath).toBe("/p.log")
 })
 
+test("parseOptions: fetchPatch 默认 true,可显式关闭", () => {
+  const r = parseOptions({ providers: ["a"] })
+  expect(r.fetchPatch).toBe(true)
+  const off = parseOptions({ providers: ["a"], fetchPatch: false })
+  expect(off.fetchPatch).toBe(false)
+  const on = parseOptions({ providers: ["a"], fetchPatch: true })
+  expect(on.fetchPatch).toBe(true)
+})
+
 test("parseOptions: planStats.accounts 映射解析", () => {
   const r = parseOptions({ providers: ["a"] })
   expect(r.planStats).toBeUndefined()

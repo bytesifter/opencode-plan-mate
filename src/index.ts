@@ -4,6 +4,8 @@ import { join } from "node:path"
 import { parseOptions, collectProviders, loadProviderConfig, configFileCandidates } from "./config"
 import { ProviderPool } from "./pool"
 import { handleHttpRequest, handleHttpResponse, type HttpHookCallbacks } from "./http-hooks"
+import { installFetchPatch } from "./fetch-patch"
+import { parseUsageLines, computeWindowSums, renderWindowTable } from "./tpm"
 import { StatsCollector, aggregateStats } from "./stats"
 import { resolveStepUsage, attributeStep, isReplayedEvent, isLocationMatch } from "./event-adapter"
 import { renderChart } from "./chart"
@@ -20,6 +22,8 @@ let globalStatsDir: string | null = null
 let globalLogger: Logger | null = null
 let globalPool: ProviderPool | null = null
 let hooksRegistered = false
+/** 全局 fetch 兜底层卸载函数(首个 setup 安装,清理时恢复原始 fetch) */
+let uninstallFetchPatch: (() => void) | null = null
 
 /** 插件启动时刻:回放过滤依据(忽略 created 早于该时刻的历史 durable 事件) */
 let pluginStartTime = 0
@@ -84,13 +88,20 @@ export default Plugin.define({
       await ctx.session.hook("http.request", (event) => handleHttpRequest(event, globalPool!, callbacks))
       await ctx.session.hook("http.response", (event) => handleHttpResponse(event, globalPool!, callbacks))
       hooksRegistered = true
+      // 全局 fetch 兜底层:覆盖绕过 session 钩子的请求(drain/恢复路径),与钩子共享 pool/熔断/统计
+      if (opts.fetchPatch !== false) {
+        uninstallFetchPatch = installFetchPatch(globalPool, {
+          onCorrelate: callbacks.onCorrelate,
+          onResponse: callbacks.onResponse,
+        })
+      }
     }
 
     // 工具注册(JSON Schema 入参,替代 V1 tool() + zod)
     await ctx.tool.transform((editor) => {
       editor.add({
         name: "plan_mate_stats",
-        description: "查看 opencode-plan-mate 按天统计(请求数与 token 消耗)",
+        description: "查看 opencode-plan-mate 按天统计(请求数与 token 消耗),并按账号输出 60s 窗口 token 分布(p50/p90/max)作为 TPM 限流观测",
         input: { type: "object", properties: { days: { type: "number" } }, additionalProperties: false },
         execute: async (args) => {
           const days = typeof (args as { days?: number } | undefined)?.days === "number"
@@ -98,7 +109,12 @@ export default Plugin.define({
             : DEFAULT_CHART_DAYS
           globalStats!.flush()
           const store = aggregateStats(globalStatsDir!, days)
-          return { content: renderChart(store, days) }
+          const chart = renderChart(store, days)
+          // TPM 窗口观测:读今日日志的 usage 行,按账号输出 60s 窗口 token 分布
+          const todayLines = globalLogger!.readTodayLines()
+          const samples = parseUsageLines(todayLines)
+          const dist = computeWindowSums(samples)
+          return { content: `${chart}\n\n${renderWindowTable(dist)}` }
         },
       })
       editor.add({
@@ -138,6 +154,8 @@ export default Plugin.define({
 
     return () => {
       controller.abort()
+      uninstallFetchPatch?.()
+      uninstallFetchPatch = null
       globalStats?.stop()
     }
   },
