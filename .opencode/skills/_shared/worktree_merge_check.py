@@ -4,9 +4,10 @@
 对「合并 feature→master」施加门禁判定：在 feature worktree 侧读取 change 的
 测试计划（`dev-notes/test-plans/<feature>/`）声明与测试报告
 （`dev-notes/test-reports/<feature>/`），按「计划承诺 -> 报告兑现」逐层判定
-（design D2/D3）。
+（G3 测试完整性）。
 
-判定口径（与 governance-standards.md §七 G3 一致）：
+判定口径（与 `and-integrate/references/integration-standards.md` §三 G3 一致）：
+  - change 任务完整性（档位 1「三类任务勾选」，两档共用）：tasks.md 有未勾选任务 -> 阻断
   - 档位 1（无代码实现任务）：跳过 G3，不阻断（D1）
   - 档位 2（含代码实现任务）：
       - 测试计划缺失 -> 视为声明全部三层需要，缺失即阻断（D3 从严）
@@ -16,7 +17,7 @@
       - 计划声明「不需要该层」：报告缺失 -> 通过（按需豁免）
 
 本模块只做**确定性判定**（文件存在性 + 报告失败数解析）；
-语义性检查（技术方案内容完整、文档豁免有效性、OCR）由治理 AI 门禁层补充（D7）。
+语义性检查（技术方案内容完整、文档豁免有效性、OCR）由 `and-integrate` AI 门禁层补充（D7）。
 
 用法:
     python worktree_merge_check.py --dir <feature worktree> --change <name>
@@ -108,19 +109,57 @@ def report_status(report_dir: Path, layer: str) -> str:
     return parse_failures(report.read_text(encoding="utf-8-sig", errors="replace"))
 
 
-def judge(dirpath, feature, has_code_tasks):
-    """G3 判定：输入 feature 目录、change 名、是否含代码实现任务，输出门禁结果。"""
+def task_completeness(change_dir):
+    """change 任务完整性：读 change 目录下 `tasks.md`，统计 done/total。
+
+    计数全部任务行（`- [x]` / `- [ ]`）。返回 `{total, done, incomplete}`。
+    供门禁「档位 1 三类任务勾选」判据与 and-verify 前置门禁同源消费。
+    """
+    tasks_file = Path(change_dir) / "tasks.md"
+    if not tasks_file.is_file():
+        return {"total": 0, "done": 0, "incomplete": 0}
+    try:
+        text = tasks_file.read_text(encoding="utf-8-sig", errors="replace")
+    except OSError:
+        return {"total": 0, "done": 0, "incomplete": 0}
+    total = done = 0
+    for line in text.splitlines():
+        head = line.strip()[:5].lower()
+        if head in ("- [x]", "- [ ]"):
+            total += 1
+            if head == "- [x]":
+                done += 1
+    return {"total": total, "done": done, "incomplete": total - done}
+
+
+def judge(dirpath, feature, has_code_tasks, change_dir=None):
+    """门禁判定：change 任务完整性（档位 1）+ G3 测试完整性（档位 2）。
+
+    `change_dir` 给定时附带任务完整性判定（两档共用）；未给定时只判 G3（向后兼容）。
+    """
     dirpath = Path(dirpath)
     report_dir = dirpath / "dev-notes" / "test-reports" / feature
     plan_text = plan_text_of(dirpath)
 
+    reasons = []
+
+    # change 任务完整性（档位 1「三类任务勾选」判据；两档共用）
+    task_comp = None
+    if change_dir is not None:
+        task_comp = task_completeness(change_dir)
+        if task_comp["incomplete"] > 0:
+            reasons.append(
+                f"change 任务未完成（{task_comp['done']}/{task_comp['total']}，缺 {task_comp['incomplete']}）"
+            )
+
     # 档位 1：无代码实现任务，跳过 G3（D1）
     if not has_code_tasks:
         return {
-            "allowed": True,
+            "allowed": len(reasons) == 0,
             "tier": 1,
-            "reasons": [],
+            "reasons": reasons,
             "per_layer": {},
+            "task_completeness": task_comp,
         }
 
     # 档位 2：测试计划缺失 -> 视为声明全部层需要（D3 从严）
@@ -128,7 +167,6 @@ def judge(dirpath, feature, has_code_tasks):
     plan_missing = not plan_text
 
     per_layer = {}
-    reasons = []
     for layer in LAYERS:
         if layer not in declared:
             per_layer[layer] = "skipped"
@@ -153,6 +191,7 @@ def judge(dirpath, feature, has_code_tasks):
         "tier": 2,
         "reasons": reasons,
         "per_layer": per_layer,
+        "task_completeness": task_comp,
     }
 
 
@@ -189,11 +228,16 @@ def main():
     ap.add_argument("--change", required=True, help="change 名（test-plans/test-reports 的 feature 目录名）")
     ap.add_argument("--changes-dir", default="openspec/changes",
                     help="openspec changes 目录相对路径（定位 change tasks.md，默认 openspec/changes）")
+    ap.add_argument("--completeness-only", action="store_true",
+                    help="只输出 change 任务完整性判定（供 and-verify 前置门禁消费）")
     a = ap.parse_args()
 
     dirpath = Path(a.dir)
     change_dir = dirpath / a.changes_dir / a.change
-    result = judge(a.dir, a.change, has_code_tasks(change_dir))
+    if a.completeness_only:
+        print(json.dumps(task_completeness(change_dir), ensure_ascii=False, indent=2))
+        return 0
+    result = judge(a.dir, a.change, has_code_tasks(change_dir), change_dir=change_dir)
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
 

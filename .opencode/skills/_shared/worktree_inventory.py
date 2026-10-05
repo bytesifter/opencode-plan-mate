@@ -32,6 +32,7 @@
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -193,6 +194,27 @@ def merged_into_master(branch, master_dir):
     return code == 0
 
 
+def branch_touched_changes(branch, master_dir):
+    """分支相对 master 的 diff 命中的 `openspec/changes/<name>/` 集合（排除 `archive/`）。
+
+    用于关联补充：命名匹配（`feature/<change>`）之外的「搭车」/ 多 change 分支。
+    基线用三点 diff（merge-base..branch），只算分支自带的改动。
+    """
+    if not branch or not master_dir:
+        return set()
+    code, out, _ = git(master_dir, "diff", "--name-only", f"master...{branch}", "--", "openspec/changes")
+    if code != 0:
+        return set()
+    names = set()
+    for line in out.splitlines():
+        m = re.match(r"openspec/changes/([^/]+)/", line.strip().replace("\\", "/"))
+        if m:
+            seg = m.group(1)
+            if seg and seg != "archive":
+                names.add(seg)
+    return names
+
+
 def build_inventory(project, master_dir, opencode_bin="opencode"):
     """组装项目盘点 JSON（四对象 + 关联）。master_dir 为执行入口（当前会话，须 master 分支）。"""
     changes, changes_source = fetch_changes()
@@ -240,6 +262,12 @@ def build_inventory(project, master_dir, opencode_bin="opencode"):
     for b in feature_branches:
         enriched_branches.append({**b, "merged_to_master": merged_into_master(b["name"], master_dir)})
 
+    # 分支 diff 命中的 changes（关联补充：命名匹配之外的多 change / 搭车）
+    branch_touched = {
+        b["name"]: branch_touched_changes(b["name"], master_dir)
+        for b in enriched_branches
+    }
+
     # git worktree 增强：脏 / 冲突 / 执行入口(master) / 已合并
     enriched_git_wt = []
     for w in git_worktrees:
@@ -258,14 +286,18 @@ def build_inventory(project, master_dir, opencode_bin="opencode"):
     all_branch_names = {b["name"] for b in enriched_branches}
     branch_checked_out = {w.get("branch"): w.get("directory") for w in enriched_git_wt if w.get("branch")}
 
-    # change -> branch（按命名 feature/<change>，对全部本地 feature 分支匹配，不要求被 checkout）
+    # change -> branch（命名匹配 feature/<change> 优先；否则回退 diff 命中的分支）
     change_to_branch = []
     for c in changes:
         cand = "feature/" + c["name"]
         if cand in all_branch_names:
-            change_to_branch.append({"change": c["name"], "status": c["status"], "branch": cand})
+            branch = cand
         else:
-            change_to_branch.append({"change": c["name"], "status": c["status"], "branch": None})
+            branch = next(
+                (bname for bname, touched in branch_touched.items() if c["name"] in touched),
+                None,
+            )
+        change_to_branch.append({"change": c["name"], "status": c["status"], "branch": branch})
 
     # branch -> worktree（checkout 关系）
     branch_to_worktree = [

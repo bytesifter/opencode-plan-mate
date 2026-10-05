@@ -23,6 +23,7 @@
 | 合并冲突检测 | git | `git -C <dir> rev-parse -q --verify MERGE_HEAD` | exit 0 = 冲突中 |
 | feature 分支 | git | `git -C <master-dir> for-each-ref ... refs/heads/feature/*` | committerdate: unix + iso8601 |
 | 已合并判定 | git | `git -C <master-dir> merge-base --is-ancestor <branch> master` | exit 0 = 已合并 |
+| 分支 diff 命中的 change | git | `git -C <master-dir> diff --name-only master...<branch> -- openspec/changes` | 关联补充：命名匹配之外的「搭车」/ 多 change；取直接子目录、排除 `archive/` |
 
 ## CLI 回退
 
@@ -57,7 +58,7 @@
 
 - `git_worktrees[].dirty`：是否有未提交/未跟踪改动；`in_merge`：合并冲突中；`is_master`：执行入口
 - `sessions[].category`：会话归属类别——`master`（directory 等于 master worktree 目录）/ `attached`（属于其他 git worktree）/ `orphan`（directory 为空，或不属于任何 git worktree；即游离会话，供纯会话治理）
-- `correlations`：change↔分支按命名（`feature/<change>`）、分支↔worktree 按 checkout、worktree↔会话按 location；孤儿区标记未关联对象——`orphans.sessions` 含 directory 为空或无 worktree 归属的会话（含空目录会话）
+- `correlations`：change↔分支按 **命名（`feature/<change>`）优先、回退分支 diff 命中 `openspec/changes/<name>/`（排除 `archive/`）**、分支↔worktree 按 checkout、worktree↔会话按 location；孤儿区标记未关联对象——`orphans.sessions` 含 directory 为空或无 worktree 归属的会话（含空目录会话）
 
 ## 版本记录
 
@@ -65,3 +66,4 @@
 - 2026-09-28：治理化改造（dirty/in_merge/is_master、`-C` 锁定）
 - 2026-09-28：项目锚点改造（openspec changes 数据源、四对象关联、orphan 标记、merged_to_master 前置）
 - 2026-09-29：纯会话治理（会话增加 `category` 标记；orphan 定义扩展至空 directory）
+- 2026-10-05：关联补充（`change_to_branch` 由命名匹配扩为「命名匹配 ∪ 分支 diff 命中 `openspec/changes/<name>/`」，支持一分支多 change）

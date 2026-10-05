@@ -15,15 +15,15 @@
   in-progress change 的关联资产 SHALL NOT 进入处置。
 
 用法:
-    python worktree_gate.py --inventory inventory.json --session <session-id> [--idle-days 15]
+    python worktree_gate.py --inventory inventory.json --session <session-id> [--idle-days 2]
     python worktree_inventory.py --project <id> --master-dir <dir> --json \
-        | python worktree_gate.py --stdin --session <id> [--idle-days 15]
+        | python worktree_gate.py --stdin --session <id> [--idle-days 2]
 
 输入:
     --inventory <file>  盘点 JSON 文件
     --stdin             从 stdin 读盘点 JSON
     --session <id>      调用会话 id（判定执行入口 + 自保护）
-    --idle-days <int>   会话闲置阈值天数（默认 15，SKILL 从 agents-defaults.yaml 读取传入）
+    --idle-days <int>   会话闲置阈值天数（兜底默认 2，正常由项目 agents-defaults.yaml 的 session_idle_days 提供）
     --exclude <dir>     额外排除的 worktree 目录（可多次）
 
 输出: JSON —— 原盘点（完整透传）+ 门禁结果 gate：
@@ -66,7 +66,7 @@ def _wt_by_dir(git_worktrees):
     return {normalize(w.get("directory", "")): w for w in git_worktrees if w.get("directory")}
 
 
-def apply_gate(inventory, session_id, extra_exclude_dirs, idle_days=15):
+def apply_gate(inventory, session_id, extra_exclude_dirs, idle_days=2):
     """施加门禁：master 执行入口判定 + 当前应用复核 + 自保护/change 门控排除。"""
     project = inventory.get("projectID", "")
     sessions = inventory.get("sessions", [])
@@ -143,7 +143,7 @@ def main():
     ap.add_argument("--inventory", help="盘点 JSON 文件路径")
     ap.add_argument("--stdin", action="store_true", help="从 stdin 读盘点 JSON")
     ap.add_argument("--session", required=True, help="调用会话 id（判定入口 + 自保护）")
-    ap.add_argument("--idle-days", type=int, default=15, help="会话闲置阈值天数（默认 15，SKILL 从 agents-defaults.yaml 读取传入）")
+    ap.add_argument("--idle-days", type=int, default=2, help="会话闲置阈值天数（兜底默认 2，正常由项目 agents-defaults.yaml 的 session_idle_days 提供）")
     ap.add_argument("--exclude", action="append", default=[], help="额外排除目录（可多次）")
     a = ap.parse_args()
 

@@ -26,5 +26,5 @@
 
 ## 5. 集成验证
 
-- [ ] 5.1 重启 opencode GUI 后台服务，真实跑一轮含多步/工具调用的对话，验证：插件日志出现 `usage` 行、统计目录出现当天 JSONL、`plan_mate_stats` 返回非空图表且 per-provider 归因与轮询日志一致
-- [ ] 5.2 全量校验：`bun test`、`bun x tsc --noEmit`、`bun run build` 通过；`openspec validate fix-usage-tracking-v2` 通过；提交并（如确认后）归档 `fix-plan-mate-v2-migration`
+- [x] 5.1 重启 opencode GUI 后台服务，真实跑一轮含多步/工具调用的对话，验证：插件日志出现 `usage` 行、统计目录出现当天 JSONL、`plan_mate_stats` 返回非空图表且 per-provider 归因与轮询日志一致 → GUI 实测通过（2026-10-04）：今日日志 usage 行 471 条、`~/.local/share/opencode/plan-mate-stats/2026-10-04.jsonl` 296 行持续写入、`plan_mate_stats` 返回 4 provider 非空图表，JSONL req 总和（volhwy2410=119/vollc5427=129/volxc9208=110/volyfc4730=117）与日志 usage 行数一致，487 次 fetch 全 200 无熔断回归
+- [x] 5.2 全量校验：`bun test`、`bun x tsc --noEmit`、`bun run build` 通过；`openspec validate fix-usage-tracking-v2` 通过；提交并（如确认后）归档 `fix-plan-mate-v2-migration` → 全量校验通过（2026-10-04）：bun test 233 pass/0 fail（exit 1 系 event-loop.test 故意抛错走 stderr 的设计行为）、tsc 0 错误、build 成功（165 modules）、openspec validate 通过；`fix-plan-mate-v2-migration` 已归档（archive/2026-10-02-fix-plan-mate-v2-migration），无需重复归档

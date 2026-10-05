@@ -43,4 +43,4 @@
 
 - [x] 9.1 `bun test` + `bunx tsc --noEmit` + `bun run build` 全绿
 - [x] 9.2 `openspec validate code-health-hardening` 通过
-- [ ] 9.3 GUI 实测一轮真实多步对话:图表输出(账号列与数量级)与改动前一致、日志格式不变、无轮询/熔断回归
+- [x] 9.3 GUI 实测一轮真实多步对话:图表输出(账号列与数量级)与改动前一致、日志格式不变、无轮询/熔断回归 → GUI 实测通过（2026-10-04，与 fix-usage-tracking-v2 5.1 同期验证）：`plan_mate_stats` 返回 4 provider（volhwy2410/vollc5427/volxc9208/volyfc4730）非空图表、数量级与 JSONL 一致；日志格式保持 `INFO usage in=.. out=.. reasoning=.. cacheR=.. cacheW=.. cost=.. session=.. provider=..` 与 `INFO fetch provider=.. key=#N(..) status=200 duration=..ms` 不变；487 次 fetch 全 200，无 cooldown/429/熔断/abort 回归

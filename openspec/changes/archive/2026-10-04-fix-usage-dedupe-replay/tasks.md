@@ -23,5 +23,5 @@
 
 ## 5. 集成验证
 
-- [ ] 5.1 还原配置后重跑 standalone 验证（`opencode-cli.exe run --standalone`）：usage 日志每条 step 只记 1 次、无历史会话重复记录、`plan_mate_stats` 返回非空且 per-provider 归因与轮询日志一致（**阻塞：standalone 环境被多实例/共享 db 污染——收到本 GUI 会话实时事件且投递 5 次，非单实例 GUI 的真实行为，见会话记录**）
+- [x] 5.1 还原配置后重跑 standalone 验证（`opencode-cli.exe run --standalone`）：usage 日志每条 step 只记 1 次、无历史会话重复记录、`plan_mate_stats` 返回非空且 per-provider 归因与轮询日志一致（**阻塞：standalone 环境被多实例/共享 db 污染——收到本 GUI 会话实时事件且投递 5 次，非单实例 GUI 的真实行为，见会话记录**）→ 经用户决策以 GUI 环境等效验证替代（2026-10-04）：回放过滤生效（今日 usage 行覆盖 7 个活跃会话，无 9/30 历史会话重复）、去重生效（JSONL req 总和 volhwy2410=119/vollc5427=129/volxc9208=110/volyfc4730=117 与日志 usage 行数一致，无重复累计）、`plan_mate_stats` 返回 4 provider 非空图表且归因与轮询日志一致；standalone 环境污染（共享 db 投递 5 次）为环境问题非代码缺陷，GUI 侧单实例行为已覆盖本任务判定项
 - [x] 5.2 全量校验：`bun test`（159 pass）、`bun x tsc --noEmit`、`bun run build` 通过；`openspec validate fix-usage-dedupe-replay` 与 `openspec validate fix-usage-tracking-v2` 均通过；提交两个 change（`7ac11d5`）（注：fix-usage-tracking-v2 的 5.1/5.2 GUI 收尾待其独立验证）

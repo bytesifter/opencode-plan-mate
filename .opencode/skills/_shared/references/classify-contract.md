@@ -12,24 +12,24 @@
 
 | 处置 | 判定 | 动作（skill 执行） |
 |------|------|------|
-| `solidify` | 有未提交工作，或游离态有未入主干提交（无条件，每次治理）；**或 master 工作区脏 + 项目级无 in-progress change + 存在 complete/archived change 锚点**（`master_commit=true`） | 固化链：提交 → 游离态落分支 → 合并 master→feature 同步 → 推送；**master 分支走 M 链：先落盘报告 → add -A → commit 到 master（message 引用锚点 change 主题）→ push origin master** |
+| `solidify` | 有未提交工作，或游离态有未入主干提交（无条件，每次治理）；**或 master 工作区脏**（`master_commit=true`；in-progress change 不门控、无锚点要求） | 固化链：提交 → 游离态落分支 → 合并 master→feature 同步 → 推送；**master 分支走收口：先落盘报告 → add -A → 若脏则 commit（message 锚定本轮处理对象）→ 若 HEAD 领先 origin/master 则 push** |
 | `cleanup` | 代码终端态：分支已合并+干净+change 非 in-progress（或孤儿已合并）；游离纯残留（干净+HEAD 已入 master + 会话过期/无会话） | 删 worktree + 删分支（+ 会话） |
 | `recycle` | 未合并干净分支 + 会话过期/无会话；**或纯会话对象**（master 非当前会话 / 游离会话）闲置超阈值 | 删 worktree+会话（保留分支）；**纯会话回收仅删会话**（豁免先固化后回收，见「纯会话对象」） |
 | `keep` | 执行入口自保护 / 当前会话（会话 id 级） / change in-progress 分支 / 未合并干净+会话活跃 / 非 feature 分支 / 游离纯残留+会话活跃 / 纯会话对象活跃 | 保留，报告原因 |
 | `stuck` | 合并冲突未解决（dirty + in_merge） | 卡死，不处置，需人工介入 |
-| `pending_merge` | 未合并干净分支（keep/recycle 的标注位） | 待合并门禁判定；门禁通过后治理自动执行 feature→master 合并，未通过原因记入 `reasons` |
+| `pending_merge` | 未合并干净分支（keep/recycle 的标注位），且携带的 changes 全为 `complete` | 待合并门禁判定；门禁通过后治理自动执行 feature→master 合并，未通过原因记入 `reasons` |
 
 判定依据：spec「双信号驱动模型」「change 状态门控处置」「固化逻辑（无条件）」「代码对象终端态清理」「会话闲置回收」「未合并对象处置」「合并边界」。
 
 ## 判定规则
 
 - **判定顺序**（每 worktree）：
-  1. 执行入口（is_master）→ 干净 `keep`；**脏时按 master 工作区提交判定：有 in-progress change → keep「迭代在飞」；无 in-progress 且有 complete/archived 锚点 → `solidify`（`master_commit=true`）；无锚点 → keep「不臆断提交」**
+  1. 执行入口（is_master）→ 干净 `keep`；**脏 → `solidify`（`master_commit=true`，收口提交；in-progress change 不门控、无锚点要求）**
   2. 合并冲突（dirty + in_merge）→ `stuck`
   3. **固化层（无条件）**：未提交工作或游离未入主干 → `solidify`
   4. **代码终端态层（git 驱动，不等会话）**：游离纯残留（会话过期/无）→ `cleanup`；分支已合并+干净+非 in-progress（或孤儿已合并）→ `cleanup`
-  5. **change 门控**：in-progress → `keep`（分支保留）
-  6. **未合并干净分支**：会话活跃 → `keep` + pending_merge；会话过期/无 → `recycle` + pending_merge
+  5. **change 门控**：分支**携带的任一 change** 为 in-progress → `keep`（分支保留，不 pending_merge）
+  6. **未合并干净分支**：携带的 changes 全为 complete（或无携带）→ 会话活跃 `keep` + pending_merge；会话过期/无 `recycle` + pending_merge
 - **纯会话对象**（第三类对象，`object_type="session"`）：worktree 与 feature 分支循环之后单独判定，仅 `keep`/`recycle` 两态——
   1. 当前会话（`gate.current_session` 会话 id 级）→ `keep`（无条件保护，即使闲置超阈值）
   2. master 目录非当前会话（`category="master"`）→ 闲置判定
@@ -40,10 +40,10 @@
 - **会话活跃判定**：`session_active(session)` = time_updated 距今 < `session_idle_days`（毫秒>10^12 自动转秒）；缺失/异常时间戳视为过期
 - **孤儿分支**（无 change）：已合并 → 代码终端态 cleanup；未合并 → keep/recycle + pending_merge
 - **游离态**：视为 feature 前置状态（落分支核心动作）；有提交未入主干 → solidify（落分支保提交）
-- **change 归档判定**（第四类对象，`archives` 字段，供 skill Step 5a 归档执行）：
+- **change 归档判定**（第四类对象，`archives` 字段，供 `and-integrate` 归档执行）：
   - 仅 `inventory.changes` 中 `status=complete` 的 change 进入归档判定；in-progress 等非 complete 不标
   - 关联分支（`correlations.change_to_branch` 的 branch）已合并 master（复用 `feature_branches[].merged_to_master`，缺失回退 git `merged_into_master`）或无关联分支 → `archive_ready: true`（可归档）
-  - 关联分支未合并 master → `archive_ready: false` + `pending_merge: true`（待合并门禁判定，门禁通过后治理自动合并，归档等待分支合入）
+  - 关联分支未合并 master → `archive_ready: false` + `pending_merge: true`（待合并门禁判定，门禁通过后由 `and-integrate` 合并，归档等待分支合入）
   - 判定数据复用 inventory 已有字段，不新增数据源
 
 ## git 命令约束
@@ -53,7 +53,7 @@
 ## 输入输出
 
 - 输入：项目盘点 JSON（inventory 输出，含 `git_worktrees[].dirty/in_merge/is_master/merged_to_master`、`sessions[].time_updated`、`correlations.change_to_branch`）
-- `--idle-days`：会话闲置阈值（默认 15，SKILL 从 `./norms/agents-defaults.yaml` §worktree_governance 读取传入，本模块不内嵌常量）
+- `--idle-days`：会话闲置阈值（默认见项目 `agents-defaults.yaml` 的 `session_idle_days`；本模块不内嵌常量）
 
 ```
 {
@@ -62,17 +62,19 @@
       object_type: "worktree" | "branch" | "session",
       directory, branch, detached, dirty, in_merge,
       is_master, active_session, session_id,
-      change, change_status,      # 关联 change 及状态（孤儿为 null）
+      is_current_session,         # 是否当前会话所在（R7 游离态切分依据）
+      change, change_status,      # 主 change 及状态（首个；孤儿为 null）
+      changes: [{change, status}], # 携带的 changes 列表（命名匹配 ∪ diff；支持一分支多 change）
       orphan: bool,
       merged_to_master,           # None 未判定 / bool
       disposal: "solidify"|"cleanup"|"recycle"|"keep"|"stuck",
       reason: string,
       pending_merge: bool,         # 待合并（门禁判定）
       reasons: [],                 # 未合并原因（默认空=待合并门禁判定回填；由 worktree_merge_check 判定结果填充）
-      master_commit: bool          # master 工作区提交（solidify 且 is_master 时为 true，skill 走 M 链）
+      master_commit: bool          # master 工作区提交（solidify 且 is_master 时为 true，skill 走收口提交）
     }
   ],
-  archives: [                      # change 归档判定（第四类对象，供 skill Step 5a）
+  archives: [                      # change 归档判定（第四类对象，供 `and-integrate`）
     {
       change: string,              # change 名
       status: "complete",          # 仅 complete 进入（in-progress 不标）
@@ -100,3 +102,5 @@
 - 2026-09-29：master 工作区提交（is_master 分支脏判定 + 项目级 change 门控 + complete 锚点 → solidify/master_commit）
 - 2026-09-29：change 归档执行（archives 字段：complete + 分支已合并/无分支 → archive_ready；未合并 → pending_merge；in-progress 不标）
 - 2026-10-03：合并能力（pending_merge 标注新增 `reasons` 字段默认空，由合并门禁判定回填；归档等待分支合入口径更新）
+- 2026-10-05：master 收口解耦（脏即 `master_commit=true`，退役 in-progress / 锚点硬门控；提交与发布分离：脏则 commit、领先则 push）
+- 2026-10-05：多 change 门控（`change_by_branch` 单值→列表；分支携带任一 in-progress 即不 pending_merge；对象新增 `changes` 字段）

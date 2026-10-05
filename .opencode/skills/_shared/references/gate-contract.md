@@ -18,7 +18,7 @@
   - 执行入口目录（`master_dir`）+ `--exclude` 追加目录
   - 活跃会话 worktree：`inventory.sessions` 中其他会话指向的目录，**且会话活跃**（`time_updated` 距今 < `--idle-days`，缺失/异常时间戳视为过期）；闲置会话可回收，不入排除集
   - in-progress change：`correlations.change_to_branch` 中 status=in-progress 的分支及其 worktree（经 `branch_to_worktree`）
-- `--idle-days`：会话闲置阈值天数（默认 15，SKILL 从 `./norms/agents-defaults.yaml` §worktree_governance 读取传入，本模块不内嵌常量）
+- `--idle-days`：会话闲置阈值天数（默认见项目 `agents-defaults.yaml` 的 `session_idle_days`；本模块不内嵌常量）
 - **盘点数据完整透传**（`**inventory`）：classify 需全量对象做项目总览，保护对象由 classify 标 keep，不从盘点中剥离
 
 ## 输出 JSON 结构

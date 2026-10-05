@@ -165,3 +165,38 @@ def test_has_code_tasks_detects_checked_and_unchecked():
         root = Path(td)
         # tasks.md 缺失 -> 无代码任务（档位 1）
         assert worktree_merge_check.has_code_tasks(root / "openspec" / "changes" / "c4") is False
+
+
+def test_incomplete_tasks_block():
+    """change 任务未完成 -> 阻断（档位 1「任务勾选」判据，两档共用）。"""
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        change_dir = root / "openspec" / "changes" / "c1"
+        change_dir.mkdir(parents=True)
+        (change_dir / "tasks.md").write_text("- [x] 1.1 实现\n- [ ] 1.2 实现更多\n", encoding="utf-8")
+        r = worktree_merge_check.judge(root, "feature-x", has_code_tasks=False, change_dir=change_dir)
+        assert r["allowed"] is False
+        assert r["tier"] == 1
+        assert r["task_completeness"]["incomplete"] == 1
+        assert any("任务未完成" in reason for reason in r["reasons"])
+
+
+def test_all_tasks_done_pass():
+    """change 任务全勾 -> 不因完整性阻断。"""
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        change_dir = root / "openspec" / "changes" / "c1"
+        change_dir.mkdir(parents=True)
+        (change_dir / "tasks.md").write_text("- [x] 1.1 实现\n- [x] 1.2 实现更多\n", encoding="utf-8")
+        r = worktree_merge_check.judge(root, "feature-x", has_code_tasks=False, change_dir=change_dir)
+        assert r["allowed"] is True
+        assert r["task_completeness"] == {"total": 2, "done": 2, "incomplete": 0}
+
+
+def test_task_completeness_missing_file():
+    """tasks.md 缺失 -> total/done/incomplete 均 0（不误阻断）。"""
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        assert worktree_merge_check.task_completeness(Path(td)) == {"total": 0, "done": 0, "incomplete": 0}

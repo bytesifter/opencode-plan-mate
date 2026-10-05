@@ -8,25 +8,29 @@
 
 处置值：
   - solidify: 有可固化内容（未提交工作 / 游离未入主干提交）-> 无条件固化
-              （提交 -> 游离态落分支 -> 合并 master→feature 同步 -> 推送）
+              （提交 -> 游离态落分支 -> 合并 master→feature 同步 -> 推送）；
+              master worktree 脏亦归此：master_commit=true（收口提交；in-progress 不门控）
   - cleanup:  代码终端态（已合并+干净+change 非 in-progress 或孤儿已合并）-> 删 worktree+分支；
               游离纯残留（干净+HEAD 已入 master）-> 删沙箱+会话
   - recycle:  未合并分支 + 会话过期/无会话 -> 回收沙箱+会话，保留分支（待合并/进行中）
   - keep:     执行入口自保护 / in-progress 分支 / 未合并干净+会话活跃 / 非 feature 分支
   - stuck:    合并冲突未解决（dirty + in_merge）
-  - pending_merge: 未合并干净分支的标注（待合并门禁判定，门禁通过后治理自动执行 feature→master 合并）
+  - pending_merge: 未合并干净分支的标注（待合并门禁判定，门禁通过后由 `and-integrate` 执行 feature→master 合并）
+
+每个 worktree/会话对象含 `is_current_session`（是否当前会话所在，依据 `gate.current_session`），
+供 R7「游离态按会话切分」机械判定：当前会话游离态归 `and-verify`，非当前会话游离态归环境看管 skill。
 
 判定依据与 spec「双信号驱动模型」「change 状态门控处置」「固化逻辑（无条件）」
 「代码对象终端态清理」「会话闲置回收」「未合并对象处置」「合并边界」及治理规范一致。
 
 git 命令全部显式 `git -C <目录>` 锁定；已合并判定用 master_dir，游离 HEAD 祖先判定用 worktree 目录。
-`session_idle_days` 由 `--idle-days` 传入（SKILL 从 ./norms/agents-defaults.yaml §worktree_governance 读取），
-本模块不内嵌常量（默认 15 仅作参数缺失兜底）。
+`session_idle_days` 由 `--idle-days` 传入（默认见项目 `agents-defaults.yaml`，可覆盖），
+本模块不内嵌常量（兜底默认 2 仅作参数缺失兜底）。
 
 用法:
-    python worktree_classify.py --inventory inventory.json [--idle-days 15]
+    python worktree_classify.py --inventory inventory.json [--idle-days 2]
     python worktree_inventory.py --project <id> --master-dir <dir> --json \
-        | python worktree_classify.py --stdin [--idle-days 15]
+        | python worktree_classify.py --stdin [--idle-days 2]
 
 输出: JSON（stdout）。objects 为项目总览 + 处置清单，供 skill 执行并写入治理报告。
 """
@@ -90,7 +94,7 @@ def session_active(session, now_sec, idle_days):
     return t >= now_sec - idle_days * 86400
 
 
-def decide(inventory, idle_days=15):
+def decide(inventory, idle_days=2):
     """对项目盘点做双信号模型处置判定，返回 objects（项目总览 + 处置清单）。"""
     sessions = inventory.get("sessions", [])
     git_wt = inventory.get("git_worktrees", [])
@@ -98,16 +102,11 @@ def decide(inventory, idle_days=15):
     correlations = inventory.get("correlations", {})
     changes = inventory.get("changes", [])
     master_dir = inventory.get("master_dir", "")
+    current_session_id = inventory.get("gate", {}).get("current_session", "")
     now_sec = int(time.time())
 
-    # 项目级 change 状态门控（master 工作区提交锚点）：
-    # 存在任一 in-progress change = 迭代在飞，master 不收口；
-    # 存在 complete/archived change = 可关联终结锚点，master 提交有业务上下文
-    has_in_progress_change = any(c.get("status") == "in-progress" for c in changes)
-    master_commit_anchor = next(
-        (c for c in changes if c.get("status") in ("complete", "archived")), None
-    )
-
+    # master 工作区提交判定不再依赖 change 状态门控（in-progress 不阻断、无锚点要求）：
+    # 工作区脏即收口提交（master 的未提交改动只来自 and-integrate 自身）。
     session_by_dir = {}
     for s in sessions:
         d = s.get("directory", "")
@@ -116,8 +115,9 @@ def decide(inventory, idle_days=15):
 
     change_by_branch = {}
     for c in correlations.get("change_to_branch", []):
-        if c.get("branch"):
-            change_by_branch[c["branch"]] = (c["change"], c.get("status", ""))
+        b = c.get("branch")
+        if b:
+            change_by_branch.setdefault(b, []).append((c["change"], c.get("status", "")))
 
     checked_out = {w.get("branch") for w in git_wt if w.get("branch")}
     branch_meta = {b["name"]: b for b in feature_branches}
@@ -125,7 +125,8 @@ def decide(inventory, idle_days=15):
     objects = []
 
     def make_obj(d, branch, detached, dirty, in_merge, is_master, active_session, sess):
-        change, change_status = change_by_branch.get(branch, (None, None))
+        primary = change_by_branch.get(branch, [])
+        change, change_status = (primary[0] if primary else (None, None))
         obj = {
             "object_type": "worktree" if d else "branch",
             "directory": d,
@@ -136,9 +137,11 @@ def decide(inventory, idle_days=15):
             "is_master": bool(is_master),
             "active_session": bool(active_session),
             "session_id": (sess or {}).get("id", ""),
+            "is_current_session": bool(current_session_id and (sess or {}).get("id", "") == current_session_id),
             "change": change,
             "change_status": change_status,
-            "orphan": change is None,
+            "changes": [{"change": n, "status": s} for n, s in primary],
+            "orphan": not primary,
             "merged_to_master": None,
             "disposal": "keep",
             "reason": "",
@@ -162,17 +165,12 @@ def decide(inventory, idle_days=15):
 
         obj = make_obj(d, branch, detached, dirty, in_merge, is_master, active, sess)
 
-        # 执行入口自保护 + master 工作区提交（双信号扩展）
+        # 执行入口自保护 + master 工作区提交（脏即收口提交，不再按 change 状态门控）
         if is_master:
             if dirty:
-                if has_in_progress_change:
-                    obj["reason"] = "master 工作区脏，项目有 in-progress change，迭代在飞，master 不收口"
-                elif master_commit_anchor is not None:
-                    obj["disposal"] = "solidify"
-                    obj["master_commit"] = True
-                    obj["reason"] = f"master 工作区脏，无 in-progress change，基于 change「{master_commit_anchor.get('name', '')}」终结收口提交"
-                else:
-                    obj["reason"] = "master 工作区脏，无 change 锚点，不臆断提交 master"
+                obj["disposal"] = "solidify"
+                obj["master_commit"] = True
+                obj["reason"] = "master 工作区脏，收口提交（归档产物 / 历史滞留）"
             else:
                 obj["reason"] = "master worktree 执行入口，自保护"
             objects.append(obj)
@@ -205,14 +203,16 @@ def decide(inventory, idle_days=15):
         if branch:
             merged = merged_into_master(branch, master_dir)
             obj["merged_to_master"] = merged
-            if merged and change_by_branch.get(branch, (None, ""))[1] != "in-progress":
+            carried = change_by_branch.get(branch, [])
+            incomplete = [n for n, s in carried if s == "in-progress"]
+            if merged and not incomplete:
                 obj["disposal"] = "cleanup"
                 obj["reason"] = "代码终端态：已合并 master 且工作区干净"
                 objects.append(obj)
                 continue
-            # change in-progress 门控（分支保留）
-            if change_by_branch.get(branch, (None, ""))[1] == "in-progress":
-                obj["reason"] = f"change {change_by_branch[branch][0]} in-progress，迭代在飞，保留分支"
+            # change in-progress 门控（任一未完成即保留分支，不 pending_merge）
+            if incomplete:
+                obj["reason"] = f"change {'、'.join(incomplete)} in-progress，迭代在飞，保留分支"
                 objects.append(obj)
                 continue
             # 非 feature 分支
@@ -238,10 +238,11 @@ def decide(inventory, idle_days=15):
     for b in feature_branches:
         if b["name"] in checked_out:
             continue
-        change, change_status = change_by_branch.get(b["name"], (None, None))
+        carried = change_by_branch.get(b["name"], [])
         obj = make_obj("", b["name"], False, False, False, False, False, None)
-        if change_status == "in-progress":
-            obj["reason"] = f"change {change} in-progress，迭代在飞，保留分支"
+        incomplete = [n for n, s in carried if s == "in-progress"]
+        if incomplete:
+            obj["reason"] = f"change {'、'.join(incomplete)} in-progress，迭代在飞，保留分支"
             objects.append(obj)
             continue
         merged = merged_into_master(b["name"], master_dir)
@@ -284,6 +285,7 @@ def decide(inventory, idle_days=15):
                 "is_master": False,
                 "active_session": bool(session_active(s, now_sec, idle_days)),
                 "session_id": sid,
+                "is_current_session": True,
                 "change": None,
                 "change_status": None,
                 "orphan": False,
@@ -319,6 +321,7 @@ def decide(inventory, idle_days=15):
             "is_master": False,
             "active_session": bool(active),
             "session_id": sid,
+            "is_current_session": bool(current_session_id and sid == current_session_id),
             "change": None,
             "change_status": None,
             "orphan": label == "游离会话",
@@ -335,7 +338,7 @@ def decide(inventory, idle_days=15):
             obj["reason"] = f"{label}，闲置超阈值，纯会话回收（仅删除会话，豁免先固化后回收）"
         objects.append(obj)
 
-    # ---- 4) change 归档判定（archive_ready，供 skill Step 5a 归档执行）----
+    # ---- 4) change 归档判定（archive_ready，供 and-integrate 归档执行）----
     archive_list = []
     change_to_branch_map = {c.get("change"): c for c in correlations.get("change_to_branch", [])}
     for c in changes:
@@ -377,8 +380,8 @@ def main():
     ap = argparse.ArgumentParser(description="项目治理共享处置判定引擎")
     ap.add_argument("--inventory", help="项目盘点 JSON 文件路径")
     ap.add_argument("--stdin", action="store_true", help="从 stdin 读盘点 JSON")
-    ap.add_argument("--idle-days", type=int, default=15,
-                    help="会话闲置阈值天数（默认 15，SKILL 从 agents-defaults.yaml 读取传入）")
+    ap.add_argument("--idle-days", type=int, default=2,
+                    help="会话闲置阈值天数（兜底默认 2，正常由项目 agents-defaults.yaml 的 session_idle_days 提供）")
     a = ap.parse_args()
 
     if a.inventory:
