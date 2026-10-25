@@ -1,0 +1,17 @@
+{
+  "layer": "unit",
+  "app": "opencode-plan-mate",
+  "status": "pass",
+  "reason": "",
+  "code_fingerprint": "5239c1aa0ecfeeb380e16294a3d90e055098ad4bc1320b0f0498b06c8f452c4b",
+  "started_at": "2026-10-25 09:24:32",
+  "finished_at": "2026-10-25 09:24:33",
+  "counts": {
+    "tests": 233,
+    "passed": 233,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "invalid_skips": 0
+  }
+}

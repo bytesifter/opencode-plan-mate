@@ -1,0 +1,17 @@
+{
+  "layer": "e2e",
+  "app": null,
+  "status": "not_executed",
+  "reason": "profile unit-only（本轮仅激活 unit）；且项目无标准部署入口与环境声明，端到端无目标环境可承载",
+  "code_fingerprint": "5239c1aa0ecfeeb380e16294a3d90e055098ad4bc1320b0f0498b06c8f452c4b",
+  "started_at": null,
+  "finished_at": null,
+  "counts": {
+    "tests": null,
+    "passed": null,
+    "failures": null,
+    "errors": null,
+    "skipped": null,
+    "invalid_skips": null
+  }
+}
